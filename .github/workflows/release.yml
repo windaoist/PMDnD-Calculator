@@ -3,33 +3,33 @@ name: Build Electron Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*.*.*'
+
+permissions:
+  contents: write
 
 jobs:
   release:
-
     runs-on: windows-latest
-
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22
+      - name: Install
+        run: npm ci
 
-    - name: Install
-      run:
-        npm install
+      - name: Build portable executable
+        run: npm run make:portable
 
-    - name: Build
-      run:
-        npm run make:portable
-
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          out/make/**
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true

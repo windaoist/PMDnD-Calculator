@@ -1,5 +1,4 @@
 <div align="center">
-<img src="./resources/icon.png" width="160">
 </div>
 
 <h1 align="center">PMDnD Calculator</h1>

@@ -27,7 +27,6 @@ export interface AppAPI {
     slot?: number
     message?: string
   }>
-  loadPresetSave: () => Promise<{ success: boolean; data?: string; message?: string }>
   quickSaveSlots: () => Promise<QuickSaveSlotInfo[]>
   deleteQuickSave: (slot: number) => Promise<{ success: boolean; message?: string }>
   getSaveDir: () => Promise<string>

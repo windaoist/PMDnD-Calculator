@@ -1,11 +1,14 @@
 import { reactive, ref } from 'vue'
 
 const APP_SETTINGS_KEY = 'pmdnd-kate-app-settings-v1'
+const APP_SETTINGS_VERSION = 3
 const DEFAULT_UI_SCALE = 1
-const DEFAULT_RENDER_SCALE = 4
-const DEFAULT_WORKSPACE_MODE: WorkspaceMode = 'map'
+const DEFAULT_RENDER_SCALE = 2
+const DEFAULT_WORKSPACE_MODE: WorkspaceMode = 'calculator'
+const DEFAULT_THEME_MODE: ThemeMode = 'light'
 
-export type WorkspaceMode = 'map' | 'legacy'
+export type WorkspaceMode = 'calculator' | 'map'
+export type ThemeMode = 'light' | 'dark'
 
 export const uiScaleOptions = [
   { value: 0.75, label: '75%' },
@@ -25,12 +28,14 @@ export interface AppSettings {
   uiScale: number
   renderScale: number
   workspaceMode: WorkspaceMode
+  themeMode: ThemeMode
 }
 
 export const appSettings = reactive<AppSettings>({
   uiScale: DEFAULT_UI_SCALE,
   renderScale: DEFAULT_RENDER_SCALE,
-  workspaceMode: DEFAULT_WORKSPACE_MODE
+  workspaceMode: DEFAULT_WORKSPACE_MODE,
+  themeMode: DEFAULT_THEME_MODE
 })
 
 export const appSettingsError = ref('')
@@ -54,7 +59,19 @@ export function normalizeRenderScale(value: unknown): number {
 }
 
 function normalizeWorkspaceMode(value: unknown): WorkspaceMode {
-  return value == 'legacy' ? 'legacy' : DEFAULT_WORKSPACE_MODE
+  // The tactical map now opens as a normal tab. Migrate installations that
+  // previously started in the separate map workspace back to the tabbed shell.
+  void value
+  return DEFAULT_WORKSPACE_MODE
+}
+
+function normalizeThemeMode(value: unknown): ThemeMode {
+  return value == 'dark' ? 'dark' : DEFAULT_THEME_MODE
+}
+
+function applyThemeMode(): void {
+  document.documentElement.dataset.theme = appSettings.themeMode
+  document.documentElement.style.colorScheme = appSettings.themeMode
 }
 
 function applyUiScale(): void {
@@ -66,9 +83,11 @@ function persistAppSettings(): void {
     localStorage.setItem(
       APP_SETTINGS_KEY,
       JSON.stringify({
+        version: APP_SETTINGS_VERSION,
         uiScale: appSettings.uiScale,
         renderScale: appSettings.renderScale,
-        workspaceMode: appSettings.workspaceMode
+        workspaceMode: appSettings.workspaceMode,
+        themeMode: appSettings.themeMode
       })
     )
     appSettingsError.value = ''
@@ -83,15 +102,23 @@ export function initializeAppSettings(): void {
   try {
     const stored = localStorage.getItem(APP_SETTINGS_KEY)
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<AppSettings>
+      const parsed = JSON.parse(stored) as Partial<AppSettings> & { version?: number }
       appSettings.uiScale = normalizeUiScale(parsed.uiScale)
-      appSettings.renderScale = normalizeRenderScale(parsed.renderScale)
+      // v1 used 4x as its default. Migrate that value once so existing users
+      // also receive the safer 2x default; 4x remains selectable afterwards.
+      appSettings.renderScale =
+        parsed.version === undefined && Number(parsed.renderScale) == 4
+          ? DEFAULT_RENDER_SCALE
+          : normalizeRenderScale(parsed.renderScale)
       appSettings.workspaceMode = normalizeWorkspaceMode(parsed.workspaceMode)
+      appSettings.themeMode = normalizeThemeMode(parsed.themeMode)
+      if (parsed.version !== APP_SETTINGS_VERSION) persistAppSettings()
     }
   } catch {
     appSettingsError.value = '设置读取失败，已使用默认值。'
   }
   applyUiScale()
+  applyThemeMode()
 }
 
 export function setUiScale(value: unknown): void {
@@ -111,5 +138,11 @@ export function setRenderScale(value: unknown): void {
 
 export function setWorkspaceMode(value: unknown): void {
   appSettings.workspaceMode = normalizeWorkspaceMode(value)
+  persistAppSettings()
+}
+
+export function setThemeMode(value: unknown): void {
+  appSettings.themeMode = normalizeThemeMode(value)
+  applyThemeMode()
   persistAppSettings()
 }

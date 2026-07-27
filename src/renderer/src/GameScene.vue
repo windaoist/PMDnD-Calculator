@@ -30,10 +30,9 @@ import {
 import ContextMenu from './components/ContextMenu.vue'
 import type { ContextMenuAction } from './components/ContextMenu.vue'
 import { drawCanvasLabel } from './utils'
-import MenuBar from './components/MenuBar.vue'
+import SceneSidebar from './components/SceneSidebar.vue'
 import SceneDockview from './components/SceneDockview.vue'
-import SceneTaskbar from './components/SceneTaskbar.vue'
-import SceneToolbar from './components/SceneToolbar.vue'
+import CalculatorWorkbench from './components/CalculatorWorkbench.vue'
 import type { DockviewReadyEvent } from 'dockview-vue'
 import { readCardFromXlsx } from './model/CardReader'
 import { extractCharacterSheetPngs, type XlsxSheetImage } from './model/XlsxImages'
@@ -59,9 +58,9 @@ import {
 } from './model/DataType'
 import { ResistManager, StatusManager } from './model/StatusManager'
 import {
+  assetUsesToken,
   normalizeMapAssets,
   saveCurrentBackgroundSettingsToAsset,
-  syncTokenImagesFromAssets,
   upsertMapAsset
 } from './model/MapAssets'
 import type { QuickSaveSlotInfo } from './platform/types'
@@ -84,21 +83,39 @@ import { coneTrianglePoints } from './model/DrawingGeometry'
 import { drawFallbackToken, isUsableTokenImage } from './gameScene/tokenRendering'
 import { useSceneDockview } from './gameScene/useSceneDockview'
 import { HistoryManager } from './gameScene/history'
-import { appSettings, normalizeRenderScale } from './appSettings'
+import { appSettings, normalizeRenderScale, setWorkspaceMode } from './appSettings'
 import { roundedCreatureTokenDistance } from './model/CreatureDistance'
 import {
   drawingIsField,
   fieldColorForField,
   fieldLabelPoint,
   fieldRemainingText,
+  isAreaDrawing,
   normalizeFieldData,
   pointInAreaDrawingGrid
 } from './model/MapFields'
 
 const thisCreatures = ref<Creature[]>(Creatures.value)
 const mm = mapMemory.value
+const creatureByCode = computed(
+  () => new Map(thisCreatures.value.map((creature) => [creature.code(), creature]))
+)
+const tokenByCode = computed(() => new Map(mm.tokens.map((token) => [token.code, token])))
+const activeBackgroundAsset = computed(
+  () => mm.assets.find((asset) => asset.key == mm.currentBackgroundKey) ?? null
+)
+const backgroundDataUrl = computed(() => activeBackgroundAsset.value?.dataUrl ?? '')
 const containerRef = ref<HTMLDivElement | null>(null)
-const legacyMode = computed(() => appSettings.workspaceMode == 'legacy')
+const calculatorMode = computed(() => appSettings.workspaceMode == 'calculator')
+const calculatorHomeVisible = ref(true)
+const openPanelCount = ref(0)
+const openPanelIds = ref<ReadonlySet<string>>(new Set())
+const activePanelId = ref('')
+const calculatorHomeButtonLabel = computed(() =>
+  calculatorHomeVisible.value && openPanelCount.value > 0
+    ? `返回标签页（${openPanelCount.value}）`
+    : '工作台首页'
+)
 
 // ── Dockview ──
 const { dockviewApi, onDockviewReady, scheduleKeepFloatingPanelsReachable, cleanupDockview } =
@@ -117,31 +134,10 @@ interface RegisteredPanel {
   params: Record<string, unknown>
 }
 
-interface MinimizedPanelEntry extends RegisteredPanel, FloatingPanelBounds {
-  id: string
-  minWidth: number
-  minHeight: number
-  order: number
-}
-
 const panelRegistry = new Map<string, RegisteredPanel>()
-const minimizedPanels = ref<MinimizedPanelEntry[]>([])
-const showDesktopRestoreIds = ref<string[]>([])
 const rememberedFloatingBounds = new Map<string, FloatingPanelBounds>()
 const rememberedFloatingPanelIds = new Set(['panel-initiative'])
-let minimizedPanelOrder = 0
 let dockviewPanelMemoryDisposables: { dispose: () => void }[] = []
-
-const taskbarPanels = computed(() =>
-  minimizedPanels.value
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((panel) => ({
-      id: panel.id,
-      title: panel.title,
-      component: panel.component
-    }))
-)
 
 // ── 右键上下文菜单 ──
 const ctxMenuVisible = ref(false)
@@ -164,7 +160,7 @@ const ctxMenuActions = computed<ContextMenuAction[]>(() => {
     ]
   }
   if (ctxMenuTarget.value == 'drawing') {
-    return [
+    const actions: ContextMenuAction[] = [
       { label: '移动', action: 'move-drawing' },
       { label: '重涂颜色', action: 'recolor-drawing' },
       { label: '重涂为红色', action: 'recolor-drawing-red' },
@@ -172,9 +168,13 @@ const ctxMenuActions = computed<ContextMenuAction[]>(() => {
       { label: '重涂为绿色', action: 'recolor-drawing-green' },
       { label: '删除', action: 'delete-drawing' }
     ]
+    if (isAreaDrawing(mm.drawings[ctxMenuDrawingIdx.value])) {
+      actions.splice(5, 0, { label: '详细设置', action: 'field-details' })
+    }
+    return actions
   }
   if (!ctxMenuCode.value) return []
-  const c = thisCreatures.value.find((x) => x.code() == ctxMenuCode.value)
+  const c = creatureByCode.value.get(ctxMenuCode.value)
   const hpStr = c ? showHP([c.currentHP, c.tempHP]) : '?'
   return [
     { label: c ? c.name() : '???', action: '', disabled: true },
@@ -212,6 +212,7 @@ function handleContextMenu(action: string): void {
       const poly = mm.fogPolygons[ctxMenuDrawingIdx.value]
       if (poly && poly.length >= 3) {
         drawingMoveBackup = poly.map((p) => ({ ...p }))
+        drawingMoveOffset = { x: 0, y: 0 }
         dragMode = 'fogPolygon'
         dragCode = String(ctxMenuDrawingIdx.value)
         history.beginTransaction('移动迷雾')
@@ -232,6 +233,10 @@ function handleContextMenu(action: string): void {
   if (ctxMenuTarget.value == 'drawing') {
     const d = mm.drawings[ctxMenuDrawingIdx.value]
     if (!d) return
+    if (action == 'field-details') {
+      openFieldEditorForDrawing(ctxMenuDrawingIdx.value)
+      return
+    }
     if (action == 'delete-drawing') {
       mm.drawings.splice(ctxMenuDrawingIdx.value, 1)
       captureHistory('删除图形')
@@ -241,6 +246,7 @@ function handleContextMenu(action: string): void {
     if (action == 'recolor-drawing') {
       d.color = drawColor.value
       d.alpha = drawAlpha.value
+      if (d.field) d.field.color = drawColor.value
       captureHistory('重涂图形')
       draw()
       return
@@ -252,6 +258,7 @@ function handleContextMenu(action: string): void {
     }
     if (quickColors[action]) {
       d.color = quickColors[action]
+      if (d.field) d.field.color = quickColors[action]
       captureHistory('重涂图形')
       draw()
       return
@@ -261,6 +268,7 @@ function handleContextMenu(action: string): void {
       const d = mm.drawings[idx]
       if (d && d.points.length >= 2) {
         drawingMoveBackup = d.points.map((p) => ({ ...p }))
+        drawingMoveOffset = { x: 0, y: 0 }
         dragMode = 'drawing'
         dragCode = String(idx)
         history.beginTransaction('移动图形')
@@ -280,7 +288,7 @@ function handleContextMenu(action: string): void {
     return
   }
 
-  const c = thisCreatures.value.find((x) => x.code() == ctxMenuCode.value)
+  const c = creatureByCode.value.get(ctxMenuCode.value)
   if (!c) return
 
   switch (action) {
@@ -335,14 +343,31 @@ function disposeDockviewPanelMemoryListeners(): void {
 function handleDockviewReady(event: DockviewReadyEvent): void {
   onDockviewReady(event)
   disposeDockviewPanelMemoryListeners()
+  const syncOpenPanelState = (): void => {
+    openPanelCount.value = event.api.panels.length
+    const nextOpenPanelIds = new Set<string>()
+    event.api.panels.forEach((panel) => nextOpenPanelIds.add(panel.id))
+    openPanelIds.value = nextOpenPanelIds
+    activePanelId.value = event.api.activePanel?.id ?? ''
+    if (calculatorMode.value && openPanelCount.value == 0) {
+      calculatorHomeVisible.value = true
+    }
+  }
   dockviewPanelMemoryDisposables = [
-    event.api.onDidLayoutChange(rememberTrackedFloatingBounds),
+    event.api.onDidLayoutChange(() => {
+      rememberTrackedFloatingBounds()
+      syncOpenPanelState()
+    }),
+    event.api.onDidActivePanelChange(() => syncOpenPanelState()),
     event.api.onDidAddPanel((panel) => {
+      syncOpenPanelState()
       if (shouldRememberFloatingBounds(panel.id)) {
         nextTick(() => rememberFloatingBounds(panel.id))
       }
-    })
+    }),
+    event.api.onDidRemovePanel(() => nextTick(syncOpenPanelState))
   ]
+  syncOpenPanelState()
   nextTick(rememberTrackedFloatingBounds)
 }
 
@@ -371,27 +396,6 @@ function dockviewFloatingHostRect():
   const host = containerRef.value?.querySelector<HTMLElement>('.dv-floating-overlay-host')
   const rect = host?.getBoundingClientRect() ?? containerRef.value?.getBoundingClientRect()
   return rect ?? { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 }
-}
-
-function normalizeFloatingBounds(
-  component: string,
-  preferred?: Partial<FloatingPanelBounds>
-): FloatingPanelBounds & { minWidth: number; minHeight: number } {
-  const preset = panelSizePresets[component] ?? defaultPanelSizePreset
-  const hostRect = dockviewFloatingHostRect()
-  const hostWidth = hostRect.width
-  const hostHeight = hostRect.height
-  const maxWidth = Math.max(220, Math.floor(hostWidth - 24))
-  const maxHeight = Math.max(180, Math.floor(hostHeight - 48))
-  const minWidth = Math.min(preset.minWidth, maxWidth)
-  const minHeight = Math.min(preset.minHeight, maxHeight)
-  const width = clampNumber(preferred?.width ?? preset.width, minWidth, maxWidth)
-  const height = clampNumber(preferred?.height ?? preset.height, minHeight, maxHeight)
-  const defaultX = component == 'SettingsPanel' ? 24 : 200
-  const defaultY = component == 'SettingsPanel' ? 40 : 120
-  const x = clampNumber(preferred?.x ?? defaultX, 0, Math.max(0, hostWidth - width - 12))
-  const y = clampNumber(preferred?.y ?? defaultY, 28, Math.max(28, hostHeight - height - 12))
-  return { x, y, width, height, minWidth, minHeight }
 }
 
 function floatingBoundsFromAnchoredPosition(position: unknown): FloatingPanelBounds | null {
@@ -445,41 +449,6 @@ function currentFloatingBounds(panelId: string): FloatingPanelBounds | null {
   return floatingBoundsFromDockviewLayout(panelId) ?? floatingBoundsFromPanelElement(panelId)
 }
 
-function addFloatingPanel(
-  component: string,
-  id: string,
-  title: string,
-  params?: Record<string, unknown>,
-  preferredBounds?: Partial<FloatingPanelBounds>
-): void {
-  const api = dockviewApi.value
-  if (!api) return
-  const bounds = normalizeFloatingBounds(
-    component,
-    preferredBounds ??
-      (shouldRememberFloatingBounds(id) ? rememberedFloatingBounds.get(id) : undefined)
-  )
-  registerPanel(component, id, title, params)
-  api.addPanel({
-    id,
-    component,
-    title,
-    params: params ?? {},
-    minimumWidth: bounds.minWidth,
-    minimumHeight: bounds.minHeight,
-    floating: {
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height
-    }
-  })
-  if (shouldRememberFloatingBounds(id)) {
-    rememberedFloatingBounds.set(id, bounds)
-  }
-  scheduleKeepFloatingPanelsReachable()
-}
-
 function addDockedPanel(
   component: string,
   id: string,
@@ -510,20 +479,16 @@ function addDockedPanel(
   } else {
     api.addPanel(panelOptions)
   }
+  api.getPanel(id)?.focus()
 }
 
 function addWorkspacePanel(
   component: string,
   id: string,
   title: string,
-  params?: Record<string, unknown>,
-  preferredBounds?: Partial<FloatingPanelBounds>
+  params?: Record<string, unknown>
 ): void {
-  if (legacyMode.value) {
-    addDockedPanel(component, id, title, params)
-    return
-  }
-  addFloatingPanel(component, id, title, params, preferredBounds)
+  addDockedPanel(component, id, title, params)
 }
 
 interface OpenPanelEntry extends RegisteredPanel {
@@ -555,6 +520,11 @@ function currentOpenPanelEntries(): { panels: OpenPanelEntry[]; activeId?: strin
 function migrateOpenPanelsForWorkspaceMode(): void {
   const api = dockviewApi.value
   if (!api) return
+  // 地图和计算器是两个稳定视图。进入地图只隐藏计算标签页，不改变其布局。
+  if (!calculatorMode.value) {
+    nextTick(fitCanvas)
+    return
+  }
   const { panels, activeId } = currentOpenPanelEntries()
   if (panels.length == 0) {
     nextTick(fitCanvas)
@@ -562,15 +532,8 @@ function migrateOpenPanelsForWorkspaceMode(): void {
   }
 
   api.clear()
-  panels.forEach((panel, index) => {
-    if (legacyMode.value) {
-      addDockedPanel(panel.component, panel.id, panel.title, panel.params)
-      return
-    }
-    addFloatingPanel(panel.component, panel.id, panel.title, panel.params, {
-      x: 160 + (index % 8) * 24,
-      y: 64 + (index % 8) * 24
-    })
+  panels.forEach((panel) => {
+    addDockedPanel(panel.component, panel.id, panel.title, panel.params)
   })
   api.getPanel(activeId ?? panels.at(-1)?.id ?? '')?.focus()
   nextTick(fitCanvas)
@@ -583,16 +546,8 @@ function openPanel(
   title: string,
   params?: Record<string, unknown>
 ): void {
-  const minimizedIdx = minimizedPanels.value.findIndex((panel) => panel.id == id)
-  if (minimizedIdx >= 0) {
-    registerPanel(component, id, title, params)
-    Object.assign(minimizedPanels.value[minimizedIdx], {
-      component,
-      title,
-      params: params ?? {}
-    })
-    if (restoreMinimizedPanel(id)) return
-  }
+  if (!calculatorMode.value) setWorkspaceMode('calculator')
+  calculatorHomeVisible.value = false
   const api = dockviewApi.value
   if (!api) return
   registerPanel(component, id, title, params)
@@ -612,115 +567,17 @@ function openStatusPanelForCode(code: string): void {
   openPanel('StatusPanel', `status-${code}`, `${creature.name()} [${code}] · 状态`, { code })
 }
 
-function buildMinimizedPanelEntry(panelId: string): MinimizedPanelEntry | null {
-  const api = dockviewApi.value
-  const panel = api?.getPanel(panelId)
-  if (!panel) return null
-  const state = panel.toJSON()
-  const registered = panelRegistry.get(panelId)
-  const component = registered?.component ?? state.contentComponent
-  if (!component) return null
-  const title = panel.title ?? registered?.title ?? state.title ?? panelId
-  const params =
-    (state.params as Record<string, unknown> | undefined) ??
-    registered?.params ??
-    ({} as Record<string, unknown>)
-  const bounds = normalizeFloatingBounds(component, currentFloatingBounds(panelId) ?? undefined)
-  return {
-    id: panelId,
-    component,
-    title,
-    params,
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    minWidth: bounds.minWidth,
-    minHeight: bounds.minHeight,
-    order: ++minimizedPanelOrder
-  }
-}
-
-function minimizePanel(panelId: string): void {
-  const panel = dockviewApi.value?.getPanel(panelId)
-  if (!panel) return
-  const entry = buildMinimizedPanelEntry(panelId)
-  if (!entry) return
-  if (shouldRememberFloatingBounds(panelId)) {
-    rememberedFloatingBounds.set(panelId, entry)
-  }
-  const existingIdx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
-  if (existingIdx >= 0) minimizedPanels.value.splice(existingIdx, 1, entry)
-  else minimizedPanels.value.push(entry)
-  panel.api.close()
-}
-
-function restoreMinimizedPanel(panelId: string): boolean {
-  const idx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
-  if (idx < 0) return false
-  const entry = minimizedPanels.value[idx]
-  const api = dockviewApi.value
-  if (!api) return false
-  const existing = api.getPanel(panelId)
-  minimizedPanels.value.splice(idx, 1)
-  showDesktopRestoreIds.value = showDesktopRestoreIds.value.filter((id) => id != panelId)
-  if (existing) {
-    existing.focus()
-    return true
-  }
-  addWorkspacePanel(entry.component, entry.id, entry.title, entry.params, entry)
-  return true
-}
-
-function removeMinimizedPanel(panelId: string): void {
-  const idx = minimizedPanels.value.findIndex((panel) => panel.id == panelId)
-  if (idx >= 0) minimizedPanels.value.splice(idx, 1)
-  showDesktopRestoreIds.value = showDesktopRestoreIds.value.filter((id) => id != panelId)
-}
-
-function isPanelMinimized(panelId: string): boolean {
-  return minimizedPanels.value.some((panel) => panel.id == panelId)
-}
-
-function currentDockviewPanelIds(): string[] {
-  return dockviewApi.value?.panels.map((panel) => panel.id) ?? []
-}
-
-function restoreAllMinimizedPanels(): void {
-  const ids = minimizedPanels.value
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((panel) => panel.id)
-  ids.forEach((id) => restoreMinimizedPanel(id))
-}
-
-function toggleShowDesktop(): void {
-  const visiblePanelIds = currentDockviewPanelIds()
-  if (visiblePanelIds.length > 0) {
-    showDesktopRestoreIds.value = visiblePanelIds
-    visiblePanelIds.forEach((id) => minimizePanel(id))
-    return
-  }
-  if (showDesktopRestoreIds.value.length > 0) {
-    const restoreIds = [...showDesktopRestoreIds.value]
-    showDesktopRestoreIds.value = []
-    restoreIds.forEach((id) => restoreMinimizedPanel(id))
-    return
-  }
-  restoreAllMinimizedPanels()
-}
-
 function togglePanel(
   component: string,
   id: string,
   title: string,
   params?: Record<string, unknown>
 ): void {
-  if (restoreMinimizedPanel(id)) return
+  if (!calculatorMode.value) setWorkspaceMode('calculator')
+  calculatorHomeVisible.value = false
   const existing = dockviewApi.value?.getPanel(id)
   if (existing) {
-    rememberFloatingBounds(id)
-    existing.api.close()
+    existing.focus()
     return
   }
   openPanel(component, id, title, params)
@@ -731,30 +588,17 @@ function openFieldEditorForDrawing(idx: number): void {
   if (!drawing) return
   fieldEditMemory.value.selectedDrawingIdx = idx
   fieldEditMemory.value.loadFieldData(drawing.field)
-  openPanel('FieldEditPanel', 'panel-field-editor', '场地编辑', {})
+  openPanel('FieldEditPanel', 'panel-field-editor', '地图场地编辑', {})
 }
 
 function openFieldEditorForTemplate(): void {
   fieldEditMemory.value.selectedDrawingIdx = -1
-  openPanel('FieldEditPanel', 'panel-field-editor', '场地编辑', {})
-}
-
-function toggleFieldEditorForTemplate(): void {
-  if (restoreMinimizedPanel('panel-field-editor')) return
-  const existing = dockviewApi.value?.getPanel('panel-field-editor')
-  if (existing) {
-    existing.api.close()
-    return
-  }
-  openFieldEditorForTemplate()
+  fieldEditMemory.value.bindNewDrawings = false
+  openPanel('FieldEditPanel', 'panel-field-editor', '地图场地编辑', {})
 }
 
 function maybeAttachFieldToNewDrawing<T extends { type: string; field?: unknown }>(drawing: T): T {
-  if (
-    drawing.type != 'arrow' &&
-    drawing.type != 'ruler' &&
-    dockviewApi.value?.getPanel('panel-field-editor')
-  ) {
+  if (drawing.type != 'arrow' && drawing.type != 'ruler' && fieldEditMemory.value.bindNewDrawings) {
     drawing.field = fieldEditMemory.value.toFieldData()
   }
   return drawing
@@ -762,11 +606,10 @@ function maybeAttachFieldToNewDrawing<T extends { type: string; field?: unknown 
 
 provide('openPanel', openPanel)
 provide('openStatusPanel', openStatusPanelForCode)
-provide('minimizeDockviewPanel', minimizePanel)
 
 function centerOnToken(code: string): void {
-  const t = mm.tokens.find((x) => x.code == code)
-  const c = thisCreatures.value.find((x) => x.code() == code)
+  const t = tokenByCode.value.get(code)
+  const c = creatureByCode.value.get(code)
   if (!t || !c) return
   const wx = mm.offsetX + t.x * mm.cellSize
   const wy = mm.offsetY + t.y * mm.cellSize
@@ -814,6 +657,85 @@ const menuGroups = computed(() => {
   }))
   return [
     {
+      label: '角色',
+      items: [
+        { label: '角色列表', shortcut: 'Tab+1', action: 'panel-characters' },
+        { label: '导入角色...', action: 'import-xlsx' }
+      ]
+    },
+    {
+      label: '战斗',
+      items: [
+        { label: '先攻指示器', shortcut: 'Tab+2', action: 'panel-initiative' },
+        { label: '施法', action: 'panel-multi' },
+        { label: '伤害详细编辑', action: 'panel-battle' },
+        {
+          label: '状态管理',
+          disabled: statusPanelItems.length == 0,
+          children: statusPanelItems
+        }
+      ]
+    },
+    {
+      label: '检定',
+      shortcut: 'Tab+3',
+      action: 'panel-survive'
+    },
+    {
+      label: '场景',
+      items: [
+        { label: '战术地图', action: 'workspace-map' },
+        { label: '天气背景场地', shortcut: 'Tab+4', action: 'panel-weather' },
+        { label: '地图场地编辑', shortcut: 'Tab+5', action: 'panel-field-editor' },
+        { label: '背景设置', action: 'panel-background' },
+        { label: '资产管理', action: 'panel-assets' }
+      ]
+    },
+    {
+      label: '工具',
+      items: [
+        { label: '日历', action: 'panel-calendar' },
+        { label: '短休与长休', action: 'panel-rest' },
+        { label: '擒抱', action: 'panel-grapple' },
+        { label: '临时武器攻击及高空抛物', action: 'panel-fall-damage' },
+        { label: '工匠装备打造', action: 'panel-crafting' },
+        { label: '种族值标准化', action: 'panel-race-stats' }
+      ]
+    },
+    {
+      label: '存档',
+      items: [
+        { label: '存档到文件', action: 'save-dialog' },
+        { label: '从文件读取', action: 'load-dialog' },
+        { separator: true, label: '' },
+        {
+          label: '快速存档',
+          shortcut: 'F5',
+          children: slots.map((slot) => ({
+            label: quickSlotText(slot),
+            action: `quick-save-slot-${slot.slot}`
+          }))
+        },
+        {
+          label: '快速读取',
+          shortcut: 'F9',
+          children: slots.map((slot) => ({
+            label: quickSlotText(slot),
+            action: `quick-load-slot-${slot.slot}`,
+            disabled: !slot.exists
+          }))
+        },
+        {
+          label: '删除快速存档',
+          children: slots.map((slot) => ({
+            label: quickSlotText(slot),
+            action: `quick-delete-slot-${slot.slot}`,
+            disabled: !slot.exists
+          }))
+        }
+      ]
+    },
+    {
       label: '编辑',
       items: [
         {
@@ -833,90 +755,28 @@ const menuGroups = computed(() => {
       ]
     },
     {
-      label: '角色',
-      items: [
-        { label: '角色列表', shortcut: 'L', action: 'panel-characters' },
-        { label: '导入角色...', action: 'import-xlsx' }
-      ]
-    },
-    {
-      label: '战斗',
-      items: [
-        { label: '伤害详细编辑', action: 'panel-battle' },
-        { label: '施法', action: 'panel-multi' },
-        {
-          label: '状态管理',
-          disabled: statusPanelItems.length == 0,
-          children: statusPanelItems
-        },
-        { label: '先攻指示器', shortcut: 'I', action: 'panel-initiative' }
-      ]
-    },
-    {
-      label: '检定',
-      shortcut: 'C',
-      action: 'panel-survive'
-    },
-    {
-      label: '场景',
-      items: [
-        { label: '天气', shortcut: 'W', action: 'panel-weather' },
-        { label: '场地编辑', shortcut: 'S', action: 'panel-field-editor' },
-        { label: '背景设置', action: 'panel-background' },
-        { label: '资产管理', action: 'panel-assets' }
-      ]
-    },
-    {
-      label: '工具',
-      items: [
-        { label: '日历', action: 'panel-calendar' },
-        { label: '高空抛物', action: 'panel-fall-damage' },
-        { label: '擒抱', action: 'panel-grapple' },
-        { label: '工匠装备打造', action: 'panel-crafting' },
-        { label: '短休与长休', action: 'panel-rest' },
-        { label: '种族值标准化', action: 'panel-race-stats' }
-      ]
-    },
-    {
       label: '关于',
-      items: [{ label: '关于凯特的万事幕后', action: 'panel-about' }]
-    },
-    {
-      label: '存档',
-      items: [
-        { label: '存档到文件', action: 'save-dialog' },
-        { label: '从文件读取', action: 'load-dialog' },
-        { label: '加载预设存档', action: 'load-preset-save' },
-        { separator: true, label: '' },
-        {
-          label: '快速存档',
-          shortcut: 'F5',
-          children: slots.map((slot) => ({
-            label: quickSlotText(slot),
-            action: `quick-save-slot-${slot.slot}`
-          }))
-        },
-        {
-          label: '快速读取',
-          shortcut: 'F8',
-          children: slots.map((slot) => ({
-            label: quickSlotText(slot),
-            action: `quick-load-slot-${slot.slot}`,
-            disabled: !slot.exists
-          }))
-        },
-        {
-          label: '删除快速存档',
-          children: slots.map((slot) => ({
-            label: quickSlotText(slot),
-            action: `quick-delete-slot-${slot.slot}`,
-            disabled: !slot.exists
-          }))
-        }
-      ]
+      items: [{ label: '关于PMDnD计算器', action: 'panel-about' }]
     }
   ]
 })
+
+function sidebarActionForPanelId(panelId: string): string {
+  if (panelId == 'panel-map') return 'workspace-map'
+  if (panelId == 'panel-chars') return 'panel-characters'
+  if (panelId.startsWith('status-')) {
+    return `panel-status-code-${encodeURIComponent(panelId.slice('status-'.length))}`
+  }
+  return panelId
+}
+
+const openedSidebarActions = computed<ReadonlySet<string>>(() => {
+  const actions = new Set<string>()
+  openPanelIds.value.forEach((panelId) => actions.add(sidebarActionForPanelId(panelId)))
+  return actions
+})
+
+const activeSidebarAction = computed(() => sidebarActionForPanelId(activePanelId.value))
 
 function importXlsx(): void {
   xlsxFileInput.value?.click()
@@ -950,34 +810,6 @@ async function saveQuickSlot(slot: number): Promise<void> {
   if (!window.api || !hasContent()) return
   await window.api.quickSave(ESSerializerSerialize(), slot)
   await refreshQuickSaveSlots()
-}
-
-async function autoSaveCurrentState(): Promise<boolean> {
-  if (!window.api) return false
-  if (!hasContent()) return true
-  try {
-    const result = await window.api.quickSave(ESSerializerSerialize())
-    await refreshQuickSaveSlots()
-    if (!result.success) {
-      alert(result.message ?? '自动保存失败，未加载预设存档。')
-      return false
-    }
-    return true
-  } catch (error) {
-    alert(`自动保存失败，未加载预设存档：${String(error)}`)
-    return false
-  }
-}
-
-async function loadPresetSave(): Promise<void> {
-  if (!window.api?.loadPresetSave) return
-  if (!(await autoSaveCurrentState())) return
-  const result = await window.api.loadPresetSave()
-  if (result.success && result.data) {
-    loadFromJson(result.data)
-    return
-  }
-  alert(result.message ?? '预设存档加载失败。')
 }
 
 async function loadQuickSlot(slot: number): Promise<void> {
@@ -1111,6 +943,30 @@ function onXlsxChange(event: Event): void {
 }
 
 function handleMenuSelect(action: string): void {
+  if (action == 'workspace-home') {
+    if (!calculatorMode.value) {
+      setWorkspaceMode('calculator')
+      calculatorHomeVisible.value = true
+      return
+    }
+    calculatorHomeVisible.value =
+      calculatorHomeVisible.value && openPanelCount.value > 0 ? false : true
+    return
+  }
+  if (action == 'workspace-map') {
+    openPanel('TacticalMapPanel', 'panel-map', '战术地图', {})
+    return
+  }
+  if (action == 'workspace-calculator') {
+    setWorkspaceMode('calculator')
+    calculatorHomeVisible.value = true
+    return
+  }
+  // 侧栏中的功能属于计算工作区：从地图进入时使用占满工作区的标签页。
+  if (action.startsWith('panel-') && !calculatorMode.value) {
+    setWorkspaceMode('calculator')
+    calculatorHomeVisible.value = false
+  }
   if (action == 'history-undo') {
     undoHistory()
     return
@@ -1155,14 +1011,10 @@ function handleMenuSelect(action: string): void {
     loadFromFile()
     return
   }
-  if (action == 'load-preset-save') {
-    loadPresetSave()
-    return
-  }
   if (action == 'panel-characters') {
     openPanel('CharacterListPanel', 'panel-chars', '角色列表', {})
   } else if (action == 'panel-weather') {
-    openPanel('WeatherFieldPanel', 'panel-weather', '天气', {})
+    openPanel('WeatherFieldPanel', 'panel-weather', '天气背景场地', {})
   } else if (action == 'panel-field-editor') {
     openFieldEditorForTemplate()
   } else if (action == 'panel-assets') {
@@ -1172,7 +1024,7 @@ function handleMenuSelect(action: string): void {
   } else if (action == 'panel-calendar') {
     openPanel('CalendarPanel', 'panel-calendar', '日历', {})
   } else if (action == 'panel-fall-damage') {
-    openPanel('FallDamagePanel', 'panel-fall-damage', '高空抛物', {})
+    openPanel('FallDamagePanel', 'panel-fall-damage', '临时武器攻击及高空抛物', {})
   } else if (action == 'panel-grapple') {
     openPanel('GrapplePanel', 'panel-grapple', '擒抱', {})
   } else if (action == 'panel-crafting') {
@@ -1182,7 +1034,7 @@ function handleMenuSelect(action: string): void {
   } else if (action == 'panel-race-stats') {
     openPanel('RaceStatsPanel', 'panel-race-stats', '种族值标准化', {})
   } else if (action == 'panel-about') {
-    openPanel('AboutPanel', 'panel-about', '关于凯特的万事幕后', {})
+    openPanel('AboutPanel', 'panel-about', '关于PMDnD计算器', {})
   } else if (action == 'panel-battle') {
     prepareBattlePanelFromCastingTargets()
     openPanel('BattlePanel', 'panel-battle', '伤害详细编辑', {})
@@ -1288,53 +1140,53 @@ const backgroundImageStyle = computed<Record<string, string>>(() => {
 
 // 以下函数将在后续阶段集成（Token 操作、图片、背景）
 function creatureFootprint(code: string): number {
-  const c = thisCreatures.value.find((x) => x.code() == code)
+  const c = creatureByCode.value.get(code)
   if (!c) return 1
   const s = c.sizeAbility.size
   return s < 1 ? 0.5 : Math.floor(s)
 }
 
 // ── Token 图片池 ──
-const tokenImgCache = ref<Map<string, HTMLImageElement>>(new Map())
+const tokenImgCache = new Map<string, HTMLImageElement>()
 
 function loadTokenImages(): void {
   normalizeMapAssets(mm)
-  tokenImgCache.value.clear()
-  for (const entry of mm.tokenImages) {
+  tokenImgCache.clear()
+  for (const entry of mm.assets.filter(assetUsesToken)) {
     const img = new Image()
     img.onload = () => draw()
     img.src = entry.dataUrl
-    tokenImgCache.value.set(entry.key, img)
+    tokenImgCache.set(entry.key, img)
+    tokenImgCache.set(entry.key.toLowerCase(), img)
   }
 }
 
 function findTokenImage(code: string, name: string): HTMLImageElement | undefined {
-  let img = tokenImgCache.value.get(code)
-  if (img) return img
-  const lower = code.toLowerCase()
-  for (const [k, v] of tokenImgCache.value) {
-    if (k.toLowerCase() == lower) return v
-  }
-  return tokenImgCache.value.get(name)
+  return (
+    tokenImgCache.get(code) ??
+    tokenImgCache.get(code.toLowerCase()) ??
+    tokenImgCache.get(name) ??
+    tokenImgCache.get(name.toLowerCase())
+  )
 }
 
 function loadBgFromDataUrl(): void {
   normalizeMapAssets(mm)
-  const activeAsset = mm.currentBackgroundKey
-    ? mm.assets.find((asset) => asset.key == mm.currentBackgroundKey)
-    : null
-  if (activeAsset && mm.bgDataUrl != activeAsset.dataUrl) {
-    mm.bgDataUrl = activeAsset.dataUrl
-  }
-  if (!mm.bgDataUrl) {
-    draw()
-    return
-  }
   draw()
 }
 
 // ── 绘制 ──
+let drawFrameId: number | null = null
+
 function draw(): void {
+  if (drawFrameId != null) return
+  drawFrameId = window.requestAnimationFrame(() => {
+    drawFrameId = null
+    renderCanvas()
+  })
+}
+
+function renderCanvas(): void {
   const canvas = canvasRef.value
   if (!canvas) return
   const ctx = canvas.getContext('2d')
@@ -1389,20 +1241,23 @@ function draw(): void {
     code: string
     tokImg: HTMLImageElement | undefined
     faction: string
+    creature: Creature
   }[] = []
 
   for (const t of mm.tokens) {
-    const c = thisCreatures.value.find((x) => x.code() == t.code)
+    const c = creatureByCode.value.get(t.code)
     if (!c) continue
-    t.color = factionColor[c.faction] ?? '#e53935'
-    const fp = creatureFootprint(t.code)
+    const tokenColor = factionColor[c.faction] ?? t.color ?? '#e53935'
+    const fp = c.sizeAbility.size < 1 ? 0.5 : Math.floor(c.sizeAbility.size)
     const size = fp * cs
-    const cx = ox + t.x * cs
-    const cy = oy + t.y * cs
+    const position =
+      dragMode == 'token' && dragCode == t.code && dragTokenPreview ? dragTokenPreview : t
+    const cx = ox + position.x * cs
+    const cy = oy + position.y * cs
     const half = size / 2
     const tokImg = findTokenImage(c.code(), c.name())
 
-    ctx.shadowColor = factionColor[c.faction] ?? t.color
+    ctx.shadowColor = tokenColor
     ctx.shadowBlur = Math.max(2, size * 0.15) * 2 * (rs / defaultRenderScale)
     if (isUsableTokenImage(tokImg)) {
       const iw = tokImg.naturalWidth
@@ -1416,7 +1271,7 @@ function draw(): void {
       ctx.drawImage(tokImg, cx - drawW / 2, cy - drawH / 2, drawW, drawH)
       ctx.imageSmoothingEnabled = previousSmoothing
     } else {
-      drawFallbackToken(ctx, c, cx, cy, size, factionColor[c.faction] ?? t.color, mm.viewScale)
+      drawFallbackToken(ctx, c, cx, cy, size, tokenColor, mm.viewScale)
     }
     ctx.shadowColor = 'transparent'
     ctx.shadowBlur = 0
@@ -1436,12 +1291,26 @@ function draw(): void {
       size,
       code: t.code,
       tokImg,
-      faction: c.faction
+      faction: c.faction,
+      creature: c
     })
   }
 
   // 法术范围绘制
-  for (const d of mm.drawings) {
+  for (let drawingIdx = 0; drawingIdx < mm.drawings.length; drawingIdx++) {
+    const storedDrawing = mm.drawings[drawingIdx]
+    const d =
+      dragMode == 'drawing' &&
+      Number(dragCode) == drawingIdx &&
+      (drawingMoveOffset.x != 0 || drawingMoveOffset.y != 0)
+        ? {
+            ...storedDrawing,
+            points: storedDrawing.points.map((point) => ({
+              x: point.x + drawingMoveOffset.x,
+              y: point.y + drawingMoveOffset.y
+            }))
+          }
+        : storedDrawing
     ctx.globalAlpha = 1
     const fieldData = drawingIsField(d) ? normalizeFieldData(d.field) : null
     const renderColor = fieldData ? fieldColorForField(fieldData) : d.color
@@ -1574,8 +1443,7 @@ function draw(): void {
 
   // Token 叠加层
   for (const td of tokenData) {
-    const c = thisCreatures.value.find((x) => x.code() == td.code)
-    if (!c) continue
+    const c = td.creature
     const hpLevel = mm.hpDisplayLevels[c.faction] ?? 0
     const hpPct = Math.max(0, Math.min(1, c.hpRatio()))
     const barH = Math.max(2 / (mm.viewScale || 1), td.size * 0.08)
@@ -1894,7 +1762,17 @@ function draw(): void {
   if (mm.fogPolygons.length > 0 && mm.fogVisible) {
     ctx.fillStyle = `rgba(0,0,0,${mm.fogAlpha})`
     ctx.beginPath()
-    for (const poly of mm.fogPolygons) {
+    for (let fogIdx = 0; fogIdx < mm.fogPolygons.length; fogIdx++) {
+      const storedPoly = mm.fogPolygons[fogIdx]
+      const poly =
+        dragMode == 'fogPolygon' &&
+        Number(dragCode) == fogIdx &&
+        (drawingMoveOffset.x != 0 || drawingMoveOffset.y != 0)
+          ? storedPoly.map((point) => ({
+              x: point.x + drawingMoveOffset.x,
+              y: point.y + drawingMoveOffset.y
+            }))
+          : storedPoly
       if (poly.length < 3) continue
       ctx.moveTo(ox + poly[0].x * cs, oy + poly[0].y * cs)
       for (let i = 1; i < poly.length; i++) {
@@ -1934,10 +1812,9 @@ function draw(): void {
     let dx: number, dy: number
     let autoAttackTarget: (typeof mm.tokens)[number] | undefined
     if (dragMode == 'token') {
-      const t = mm.tokens.find((x) => x.code == dragCode)
-      dx = t ? t.x - dragTokenStartX : 0
-      dy = t ? t.y - dragTokenStartY : 0
-      if (t && !dragMoveCost) {
+      dx = dragTokenPreview ? dragTokenPreview.x - dragTokenStartX : 0
+      dy = dragTokenPreview ? dragTokenPreview.y - dragTokenStartY : 0
+      if (dragTokenPreview && !dragMoveCost) {
         autoAttackTarget = findAutoAttackTarget(dragCode, {
           x: dragTokenDropX,
           y: dragTokenDropY
@@ -2153,13 +2030,16 @@ let dragTokenDropX = 0
 let dragTokenDropY = 0
 let dragTokenDropCellX = 0
 let dragTokenDropCellY = 0
+let dragTokenPreview: { x: number; y: number } | null = null
 let dragMoveCost = false
 let dragMoveStartPoints = 0
 let dragOriginX = 0
 let dragOriginY = 0
 let canvasMousePos = { x: 0, y: 0 }
 let drawingMoveBackup: { x: number; y: number }[] | null = null
+let drawingMoveOffset = { x: 0, y: 0 }
 let ctrlPressed = false
+let tabPressed = false
 const activeCanvasPointers = new Map<number, { clientX: number; clientY: number }>()
 let canvasLongPressTimer: number | null = null
 let canvasLongPressPointerId: number | null = null
@@ -2224,8 +2104,8 @@ function gridSnap(
 }
 
 function ensureToken(code: string): (typeof mm.tokens)[number] | undefined {
-  let t = mm.tokens.find((x) => x.code == code)
-  const c = thisCreatures.value.find((x) => x.code() == code)
+  let t = tokenByCode.value.get(code)
+  const c = creatureByCode.value.get(code)
   if (!c) return undefined
   if (!t) {
     const fp = creatureFootprint(code)
@@ -2242,12 +2122,12 @@ function ensureToken(code: string): (typeof mm.tokens)[number] | undefined {
   return t
 }
 
-function moveToken(code: string, x: number, y: number): void {
-  const t = ensureToken(code)
-  if (!t) return
+function snappedTokenPosition(code: string, x: number, y: number): { x: number; y: number } {
   const fp = creatureFootprint(code)
-  t.x = snapPosition(fp, x)
-  t.y = snapPosition(fp, y)
+  return {
+    x: snapPosition(fp, x),
+    y: snapPosition(fp, y)
+  }
 }
 
 function gridCellCenter(value: number): number {
@@ -2288,8 +2168,8 @@ function autoAttackPoints(defenderToken: {
 }
 
 function autoAttackDistance(defenderToken: { code: string; x: number; y: number }): number {
-  const attacker = thisCreatures.value.find((creature) => creature.code() == dragCode)
-  const defender = thisCreatures.value.find((creature) => creature.code() == defenderToken.code)
+  const attacker = creatureByCode.value.get(dragCode)
+  const defender = creatureByCode.value.get(defenderToken.code)
   if (!attacker || !defender) {
     const [attackStart, attackEnd] = autoAttackPoints(defenderToken)
     return (
@@ -2316,8 +2196,8 @@ function triggerAutoAttack(
   defenderCode: string,
   points: [{ x: number; y: number }, { x: number; y: number }]
 ): void {
-  const attacker = thisCreatures.value.find((creature) => creature.code() == attackerCode)
-  const defender = thisCreatures.value.find((creature) => creature.code() == defenderCode)
+  const attacker = creatureByCode.value.get(attackerCode)
+  const defender = creatureByCode.value.get(defenderCode)
   if (!attacker || !defender) return
 
   const sameAttacker = battleMemory.value.attacker?.code() == attackerCode
@@ -2339,9 +2219,7 @@ function triggerAutoAttack(
     angle: 0
   })
 
-  if (!isPanelMinimized('panel-multi')) {
-    openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
-  }
+  openPanel('MultiTargetPanel', 'panel-multi', '施法', {})
   captureHistory('自动攻击')
 }
 
@@ -2382,13 +2260,8 @@ function canvasEventPoint(e: MouseEvent): ReturnType<typeof canvasPointFromClien
 function openCanvasContextMenuAt(clientX: number, clientY: number): void {
   // 右键取消绘图/迷雾移动
   if (drawingMoveBackup) {
-    if (dragMode == 'drawing') {
-      const d = mm.drawings[Number(dragCode)]
-      if (d) d.points = drawingMoveBackup
-    } else if (dragMode == 'fogPolygon') {
-      mm.fogPolygons[Number(dragCode)] = drawingMoveBackup
-    }
     drawingMoveBackup = null
+    drawingMoveOffset = { x: 0, y: 0 }
     dragMode = null
     draw()
     history.endTransaction(historySnapshot())
@@ -2424,10 +2297,12 @@ function openCanvasContextMenuAt(clientX: number, clientY: number): void {
     const drawing = mm.drawings[i]
     if (drawingIsField(drawing)) {
       if (pointInAreaDrawingGrid({ x: (wx - ox) / cs, y: (wy - oy) / cs }, drawing)) {
-        ctxMenuVisible.value = false
+        ctxMenuTarget.value = 'drawing'
+        ctxMenuDrawingIdx.value = i
         ctxMenuHighlight.value = { type: 'drawing', idx: i }
-        openFieldEditorForDrawing(i)
-        draw()
+        ctxMenuX.value = clientX
+        ctxMenuY.value = clientY
+        ctxMenuVisible.value = true
         return
       }
       continue
@@ -2464,12 +2339,24 @@ function canvasContextMenu(e: MouseEvent): void {
 }
 
 function cancelCanvasDragForLongPress(): void {
+  const interruptedDragMode = dragMode
   const hadDrawingDraft = dragMode == 'drawShape' || drawPending.value != 'none'
   if (hadDrawingDraft) cancelPendingDrawing()
   dragMode = null
   dragMoveCost = false
+  dragTokenPreview = null
   drawingMoveBackup = null
+  drawingMoveOffset = { x: 0, y: 0 }
   if (!hadDrawingDraft) draw()
+  if (
+    interruptedDragMode == 'token' ||
+    interruptedDragMode == 'drawing' ||
+    interruptedDragMode == 'fogPolygon' ||
+    interruptedDragMode == 'origin' ||
+    interruptedDragMode == 'oneMeter'
+  ) {
+    history.endTransaction(historySnapshot())
+  }
 }
 
 function scheduleCanvasLongPress(e: PointerEvent): void {
@@ -2500,6 +2387,19 @@ function beginCanvasPinch(): void {
   const mid = midpointClient(a, b)
   const point = canvasPointFromClient(mid.clientX, mid.clientY)
   if (!point) return
+  if (
+    dragMode == 'token' ||
+    dragMode == 'drawing' ||
+    dragMode == 'fogPolygon' ||
+    dragMode == 'origin' ||
+    dragMode == 'oneMeter'
+  ) {
+    dragTokenPreview = null
+    drawingMoveBackup = null
+    drawingMoveOffset = { x: 0, y: 0 }
+    dragMoveCost = false
+    history.endTransaction(historySnapshot())
+  }
   pinchStartDistance = Math.max(1, canvasPointerDistance(a, b))
   pinchStartScale = mm.viewScale
   pinchStartWorld = {
@@ -2588,7 +2488,9 @@ function canvasPointerCancel(e: PointerEvent): void {
   ) {
     dragMode = null
     dragMoveCost = false
+    dragTokenPreview = null
     drawingMoveBackup = null
+    drawingMoveOffset = { x: 0, y: 0 }
     draw()
     history.endTransaction(historySnapshot())
   }
@@ -2775,13 +2677,14 @@ function canvasMouseDown(e: MouseEvent): void {
       dragOriginY = wy
       dragTokenStartX = t.x
       dragTokenStartY = t.y
+      dragTokenPreview = { x: t.x, y: t.y }
       dragTokenDropX = (wx - ox) / cs
       dragTokenDropY = (wy - oy) / cs
       dragTokenDropCellX = gridCellCenter(dragTokenDropX)
       dragTokenDropCellY = gridCellCenter(dragTokenDropY)
       dragMoveCost = e.ctrlKey || e.metaKey || (isNonMousePointer(e) && touchMoveCostMode.value)
       if (dragMoveCost) {
-        const c = thisCreatures.value.find((x) => x.code() == t.code)
+        const c = creatureByCode.value.get(t.code)
         dragMoveStartPoints = c ? c.currentMov : 0
       } else {
         dragMoveStartPoints = 0
@@ -2922,7 +2825,7 @@ function canvasMouseMove(e: MouseEvent): void {
     dragTokenDropY = gridY
     dragTokenDropCellX = gridCellCenter(gridX)
     dragTokenDropCellY = gridCellCenter(gridY)
-    moveToken(dragCode, gridX, gridY)
+    dragTokenPreview = snappedTokenPosition(dragCode, gridX, gridY)
   } else if (dragMode == 'fogPolygon' || dragMode == 'drawing') {
     const s3 = mm.viewScale
     const vx3 = mm.viewX
@@ -2934,20 +2837,7 @@ function canvasMouseMove(e: MouseEvent): void {
     const rawDy = (wy - dragStartY) / cs2
     const dx = snapEnabled.value ? snapPrecision(rawDx) : rawDx
     const dy = snapEnabled.value ? snapPrecision(rawDy) : rawDy
-    if (dx != 0 || dy != 0) {
-      const arr =
-        dragMode == 'fogPolygon'
-          ? mm.fogPolygons[Number(dragCode)]
-          : mm.drawings[Number(dragCode)]?.points
-      if (arr) {
-        for (const pt of arr) {
-          pt.x += dx
-          pt.y += dy
-        }
-      }
-      dragStartX = wx
-      dragStartY = wy
-    }
+    drawingMoveOffset = { x: dx, y: dy }
   } else if (dragMode == 'origin') {
     const s4 = mm.viewScale
     const wx = (mx - mm.viewX) / s4
@@ -2978,13 +2868,17 @@ function canvasMouseUp(): void {
     draw()
     return
   }
-  if (dragMode == 'token' && !dragMoveCost && dragCode) {
-    const attackerToken = mm.tokens.find((token) => token.code == dragCode)
+  if (dragMode == 'token' && dragCode) {
+    const attackerToken = tokenByCode.value.get(dragCode)
     const wasDragged =
       attackerToken != null &&
-      Math.hypot(attackerToken.x - dragTokenStartX, attackerToken.y - dragTokenStartY) > 1e-8
+      dragTokenPreview != null &&
+      Math.hypot(
+        dragTokenPreview.x - dragTokenStartX,
+        dragTokenPreview.y - dragTokenStartY
+      ) > 1e-8
     const defenderToken =
-      attackerToken && wasDragged
+      attackerToken && wasDragged && !dragMoveCost
         ? findAutoAttackTarget(dragCode, {
             x: dragTokenDropX,
             y: dragTokenDropY
@@ -2992,19 +2886,36 @@ function canvasMouseUp(): void {
         : undefined
     if (attackerToken && defenderToken) {
       const points = autoAttackPoints(defenderToken)
-      attackerToken.x = dragTokenStartX
-      attackerToken.y = dragTokenStartY
       triggerAutoAttack(dragCode, defenderToken.code, points)
+    } else if (attackerToken && dragTokenPreview) {
+      attackerToken.x = dragTokenPreview.x
+      attackerToken.y = dragTokenPreview.y
     }
   }
   if (dragMode == 'token' && dragMoveCost && dragCode) {
-    const t = mm.tokens.find((x) => x.code == dragCode)
-    const c = thisCreatures.value.find((x) => x.code() == dragCode)
+    const t = tokenByCode.value.get(dragCode)
+    const c = creatureByCode.value.get(dragCode)
     if (t && c) {
       const dist = Math.ceil(Math.hypot(t.x - dragTokenStartX, t.y - dragTokenStartY) * 100) / 100
       const distInt = Math.round(dist * 100)
       const mpInt = Math.round(c.currentMov * 100)
       c.currentMov = (mpInt - distInt) / 100
+    }
+  }
+  if (
+    drawingMoveBackup &&
+    (dragMode == 'drawing' || dragMode == 'fogPolygon') &&
+    (drawingMoveOffset.x != 0 || drawingMoveOffset.y != 0)
+  ) {
+    const target =
+      dragMode == 'drawing'
+        ? mm.drawings[Number(dragCode)]?.points
+        : mm.fogPolygons[Number(dragCode)]
+    if (target) {
+      for (const point of target) {
+        point.x += drawingMoveOffset.x
+        point.y += drawingMoveOffset.y
+      }
     }
   }
   // 完成绘制形状（点击-拖动结束）
@@ -3066,7 +2977,9 @@ function canvasMouseUp(): void {
   }
   dragMode = null
   dragMoveCost = false
+  dragTokenPreview = null
   drawingMoveBackup = null
+  drawingMoveOffset = { x: 0, y: 0 }
   draw()
   if (
     completedDragMode == 'token' ||
@@ -3081,8 +2994,8 @@ function canvasMouseUp(): void {
 
 // ── 生命周期 ──
 function fitCanvas(): void {
-  const container = containerRef.value
   const canvas = canvasRef.value
+  const container = canvas?.parentElement
   if (!container || !canvas) return
   const cw = container.clientWidth
   const ch = container.clientHeight
@@ -3094,6 +3007,24 @@ function fitCanvas(): void {
   nextTick(() => draw())
 }
 
+function attachTacticalMap(container: HTMLElement, canvas: HTMLCanvasElement): void {
+  canvasRef.value = canvas
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    fitCanvas()
+    scheduleKeepFloatingPanelsReachable()
+  })
+  resizeObserver.observe(container)
+  fitCanvas()
+}
+
+function detachTacticalMap(canvas: HTMLCanvasElement): void {
+  if (canvasRef.value != canvas) return
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  canvasRef.value = null
+}
+
 onMounted(() => {
   normalizeMapAssets(mm)
   loadTokenImages()
@@ -3101,13 +3032,6 @@ onMounted(() => {
   refreshQuickSaveSlots()
   fitCanvas()
   history.initialize(historySnapshot())
-  if (containerRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      fitCanvas()
-      scheduleKeepFloatingPanelsReachable()
-    })
-    resizeObserver.observe(containerRef.value)
-  }
   nextTick(() => draw())
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
@@ -3123,15 +3047,8 @@ onMounted(() => {
     })
   }
 
-  // 状态变动时自动重绘地图
-  let drawTimer: ReturnType<typeof setTimeout> | null = null
-  function scheduleDraw(): void {
-    if (drawTimer) return
-    drawTimer = setTimeout(() => {
-      drawTimer = null
-      draw()
-    }, 16)
-  }
+  // 所有入口统一交给 requestAnimationFrame 合并，同一帧最多重绘一次。
+  const scheduleDraw = draw
   watch(
     () => appSettings.renderScale,
     (nextValue, previousValue) => {
@@ -3148,7 +3065,7 @@ onMounted(() => {
   watch(
     () => appSettings.workspaceMode,
     () => migrateOpenPanelsForWorkspaceMode(),
-    { flush: 'post' }
+    { flush: 'sync' }
   )
   watch(
     () =>
@@ -3188,21 +3105,33 @@ onMounted(() => {
       mm.viewScale,
       appSettings.renderScale
     ],
+    scheduleDraw
+  )
+  watch(
+    () => [
+      mm.cellSize,
+      mm.offsetX,
+      mm.offsetY,
+      mm.bgWorldW,
+      mm.bgWorldH,
+      mm.gridAlpha,
+      mm.gridColor,
+      mm.gridDashLength,
+      mm.gridLineWidth
+    ],
     () => {
       const asset = mm.currentBackgroundKey
         ? mm.assets.find((item) => item.key == mm.currentBackgroundKey)
         : null
       if (asset) saveCurrentBackgroundSettingsToAsset(mm, asset)
-      scheduleDraw()
-    },
-    { deep: true }
+    }
   )
   watch(
     () => {
       const asset = mm.currentBackgroundKey
         ? mm.assets.find((item) => item.key == mm.currentBackgroundKey)
         : null
-      return [mm.currentBackgroundKey, mm.bgDataUrl, asset?.dataUrl.length ?? 0] as const
+      return [mm.currentBackgroundKey, asset?.dataUrl.length ?? 0] as const
     },
     () => loadBgFromDataUrl(),
     { deep: true }
@@ -3210,7 +3139,6 @@ onMounted(() => {
   watch(
     () => mm.assets.map((asset) => `${asset.key}:${asset.usage}:${asset.dataUrl.length}`).join('|'),
     () => {
-      syncTokenImagesFromAssets(mm)
       loadTokenImages()
       draw()
     }
@@ -3219,7 +3147,7 @@ onMounted(() => {
     () => [
       Creatures.value,
       envMemory.value,
-      mm,
+      historyTrackedMapState(),
       statusMemory.value,
       mainMemory.value,
       toolsMemory.value,
@@ -3245,6 +3173,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('pointerup', handleGlobalPointerFinished, true)
   window.removeEventListener('pointercancel', handleGlobalPointerFinished, true)
+  if (drawFrameId != null) {
+    window.cancelAnimationFrame(drawFrameId)
+    drawFrameId = null
+  }
   history.dispose()
   disposeDockviewPanelMemoryListeners()
   cleanupDockview()
@@ -3255,6 +3187,22 @@ function onKeyDown(e: KeyboardEvent): void {
     ctrlPressed = true
     return
   }
+  const target = e.target
+  if (
+    target instanceof HTMLElement &&
+    (target.matches('input, textarea, select') ||
+      target.isContentEditable ||
+      Boolean(target.closest('[contenteditable="true"]')))
+  ) {
+    return
+  }
+
+  if (e.key == 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault()
+    tabPressed = true
+    return
+  }
+
   const key = e.key.toLowerCase()
   if ((e.ctrlKey || e.metaKey) && key == 'z') {
     e.preventDefault()
@@ -3272,24 +3220,36 @@ function onKeyDown(e: KeyboardEvent): void {
     buildSaveJson()
     return
   }
-  if (e.key == 'F8') {
+  if (e.key == 'F9') {
     e.preventDefault()
     loadFromQuickSave()
     return
   }
 
-  const target = e.target
   if (
-    target instanceof HTMLElement &&
-    (target.matches('input, textarea, select') ||
-      target.isContentEditable ||
-      Boolean(target.closest('[contenteditable="true"]')))
+    !e.repeat &&
+    tabPressed &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    /^[1-5]$/.test(e.key)
   ) {
+    e.preventDefault()
+    const panelShortcuts = [
+      () => openPanel('CharacterListPanel', 'panel-chars', '角色列表', {}),
+      () => openPanel('InitiativePanel', 'panel-initiative', '先攻', {}),
+      () => openPanel('SurvivePanel', 'panel-survive', '检定与豁免', {}),
+      () => openPanel('WeatherFieldPanel', 'panel-weather', '天气背景场地', {}),
+      () => openFieldEditorForTemplate()
+    ]
+    panelShortcuts[Number(e.key) - 1]?.()
     return
   }
+
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
 
-  if (!legacyMode.value && /^[1-9]$/.test(e.key)) {
+  if (activePanelId.value == 'panel-map' && /^[1-9]$/.test(e.key)) {
     const mode = drawModes[Number(e.key) - 1]
     if (mode) {
       e.preventDefault()
@@ -3297,32 +3257,16 @@ function onKeyDown(e: KeyboardEvent): void {
     }
     return
   }
-  if (!legacyMode.value && e.key == '0') {
+  if (activePanelId.value == 'panel-map' && e.key == '0') {
     e.preventDefault()
     toggleFogVisible()
     return
-  }
-
-  if (key == 'l') {
-    e.preventDefault()
-    togglePanel('CharacterListPanel', 'panel-chars', '角色列表', {})
-  } else if (key == 'i') {
-    e.preventDefault()
-    togglePanel('InitiativePanel', 'panel-initiative', '先攻', {})
-  } else if (key == 'c') {
-    e.preventDefault()
-    togglePanel('SurvivePanel', 'panel-survive', '检定与豁免', {})
-  } else if (key == 'w') {
-    e.preventDefault()
-    togglePanel('WeatherFieldPanel', 'panel-weather', '天气', {})
-  } else if (key == 's') {
-    e.preventDefault()
-    toggleFieldEditorForTemplate()
   }
 }
 
 function onKeyUp(e: KeyboardEvent): void {
   if (e.key == 'Control' || e.key == 'Meta') ctrlPressed = false
+  if (e.key == 'Tab') tabPressed = false
 }
 
 function battleMemorySaveData(memory: BattleMemory): Record<string, unknown> {
@@ -3344,12 +3288,14 @@ function characterMemorySaveData(): Record<string, unknown> {
 
 interface SerializeStateOptions {
   includeView?: boolean
+  includeAssets?: boolean
 }
 
 function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
   const includeView = options.includeView ?? true
+  const includeAssets = options.includeAssets ?? true
   const data = {
-    saveVersion: 2,
+    saveVersion: 3,
     creatures: Creatures.value,
     env: {
       climateBase: envMemory.value.climateBase,
@@ -3370,7 +3316,6 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
       cellSize: mm.cellSize,
       offsetX: mm.offsetX,
       offsetY: mm.offsetY,
-      bgDataUrl: mm.bgDataUrl,
       bgWorldW: mm.bgWorldW,
       bgWorldH: mm.bgWorldH,
       gridColor: mm.gridColor,
@@ -3380,8 +3325,7 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
       fogPolygons: mm.fogPolygons,
       fogAlpha: mm.fogAlpha,
       drawings: mm.drawings,
-      tokenImages: mm.tokenImages,
-      assets: mm.assets,
+      ...(includeAssets ? { assets: mm.assets } : {}),
       currentBackgroundKey: mm.currentBackgroundKey,
       hpDisplayLevels: mm.hpDisplayLevels,
       collapsedSections: mm.collapsedSections,
@@ -3427,7 +3371,30 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
 }
 
 function historySnapshot(): string {
-  return ESSerializerSerialize({ includeView: false })
+  return ESSerializerSerialize({ includeView: false, includeAssets: false })
+}
+
+function historyTrackedMapState(): unknown[] {
+  return [
+    mm.tokens,
+    mm.cellSize,
+    mm.offsetX,
+    mm.offsetY,
+    mm.bgWorldW,
+    mm.bgWorldH,
+    mm.gridColor,
+    mm.gridAlpha,
+    mm.gridDashLength,
+    mm.gridLineWidth,
+    mm.fogPolygons,
+    mm.fogAlpha,
+    mm.drawings,
+    mm.currentBackgroundKey,
+    mm.hpDisplayLevels,
+    mm.collapsedSections,
+    mm.initiativeBarEnabled,
+    mm.fogVisible
+  ]
 }
 
 function captureHistory(label = '操作'): void {
@@ -3441,13 +3408,13 @@ function scheduleHistoryCapture(label = '编辑'): void {
 function undoHistory(): void {
   const snapshot = history.undo()
   if (!snapshot) return
-  loadFromJson(snapshot, { clearHistory: false, preserveView: true })
+  loadFromJson(snapshot, { clearHistory: false, preserveView: true, preserveAssets: true })
 }
 
 function redoHistory(): void {
   const snapshot = history.redo()
   if (!snapshot) return
-  loadFromJson(snapshot, { clearHistory: false, preserveView: true })
+  loadFromJson(snapshot, { clearHistory: false, preserveView: true, preserveAssets: true })
 }
 
 async function loadFromQuickSave(): Promise<void> {
@@ -3508,6 +3475,7 @@ const ESS_CLASSES = [
 interface LoadJsonOptions {
   clearHistory?: boolean
   preserveView?: boolean
+  preserveAssets?: boolean
 }
 
 function loadFromJson(json: string, options: LoadJsonOptions = {}): void {
@@ -3528,7 +3496,10 @@ function loadFromJson(json: string, options: LoadJsonOptions = {}): void {
         }
       }
       loadEnvData((data.env as Record<string, unknown>) ?? {})
-      loadMapData((data.map as Record<string, unknown>) ?? {}, { preserveView })
+      loadMapData((data.map as Record<string, unknown>) ?? {}, {
+        preserveView,
+        preserveAssets: options.preserveAssets
+      })
       loadStatusData((data.status as Record<string, unknown>) ?? {})
       loadContextData(data)
     }
@@ -3539,10 +3510,9 @@ function loadFromJson(json: string, options: LoadJsonOptions = {}): void {
     drawPending.value = 'none'
     currentPolygon.value = []
     dragMode = null
-    if (clearHistory) {
-      minimizedPanels.value = []
-      showDesktopRestoreIds.value = []
-    }
+    dragTokenPreview = null
+    drawingMoveBackup = null
+    drawingMoveOffset = { x: 0, y: 0 }
     draw()
     if (clearHistory) history.clear(historySnapshot())
     else history.markRestored(historySnapshot())
@@ -3648,16 +3618,21 @@ function loadContextData(data: Record<string, unknown>): void {
   )
 }
 
-function loadMapData(m: Record<string, unknown>, options: { preserveView?: boolean } = {}): void {
+function loadMapData(
+  m: Record<string, unknown>,
+  options: { preserveView?: boolean; preserveAssets?: boolean } = {}
+): void {
   const previousView = {
     viewX: mm.viewX,
     viewY: mm.viewY,
     viewScale: mm.viewScale
   }
+  const previousAssets = mm.assets
   const sourceRenderScale =
     m.viewUnit == 'css' ? 1 : normalizeRenderScale(m.renderScale ?? defaultRenderScale)
   const viewScaleRatio = currentRenderScale() / sourceRenderScale
   Object.assign(mm, new MapMemory())
+  if (options.preserveAssets) mm.assets = previousAssets
   if (m.tokens) mm.tokens = m.tokens as typeof mm.tokens
   if (m.cellSize) mm.cellSize = m.cellSize as number
   if (m.offsetX !== undefined) mm.offsetX = m.offsetX as number
@@ -3669,10 +3644,6 @@ function loadMapData(m: Record<string, unknown>, options: { preserveView?: boole
   if (m.viewScale !== undefined) mm.viewScale = Number(m.viewScale) * viewScaleRatio
   else if (options.preserveView) mm.viewScale = previousView.viewScale
   else mm.viewScale = currentRenderScale()
-  if (m.bgDataUrl !== undefined) {
-    mm.bgDataUrl = m.bgDataUrl as string
-    loadBgFromDataUrl()
-  }
   if (m.bgWorldW) mm.bgWorldW = m.bgWorldW as number
   if (m.bgWorldH) mm.bgWorldH = m.bgWorldH as number
   if (m.gridColor) mm.gridColor = m.gridColor as string
@@ -3682,10 +3653,7 @@ function loadMapData(m: Record<string, unknown>, options: { preserveView?: boole
   if (m.fogPolygons) mm.fogPolygons = m.fogPolygons as typeof mm.fogPolygons
   if (m.fogAlpha !== undefined) mm.fogAlpha = m.fogAlpha as number
   if (m.drawings) mm.drawings = m.drawings as typeof mm.drawings
-  if (m.tokenImages) {
-    mm.tokenImages = m.tokenImages as typeof mm.tokenImages
-  }
-  if (m.assets) mm.assets = m.assets as typeof mm.assets
+  if (!options.preserveAssets && m.assets) mm.assets = m.assets as typeof mm.assets
   if (m.currentBackgroundKey !== undefined)
     mm.currentBackgroundKey = m.currentBackgroundKey as string
   if (m.hpDisplayLevels) mm.hpDisplayLevels = m.hpDisplayLevels as Record<string, number>
@@ -3693,7 +3661,12 @@ function loadMapData(m: Record<string, unknown>, options: { preserveView?: boole
   if (m.initiativeBarEnabled !== undefined)
     mm.initiativeBarEnabled = m.initiativeBarEnabled as boolean
   if (m.fogVisible !== undefined) mm.fogVisible = m.fogVisible as boolean
-  normalizeMapAssets(mm)
+  normalizeMapAssets(mm, {
+    bgDataUrl: typeof m.bgDataUrl == 'string' ? m.bgDataUrl : undefined,
+    tokenImages: Array.isArray(m.tokenImages)
+      ? (m.tokenImages as { key: string; dataUrl: string }[])
+      : undefined
+  })
   loadTokenImages()
   loadBgFromDataUrl()
   fitCanvas()
@@ -3704,7 +3677,7 @@ function hasContent(): boolean {
   if (mm.tokens.length > 0) return true
   if (mm.drawings.length > 0) return true
   if (mm.fogPolygons.length > 0) return true
-  if (mm.bgDataUrl) return true
+  if (backgroundDataUrl.value) return true
   return false
 }
 
@@ -3714,62 +3687,63 @@ async function buildSaveJson(): Promise<void> {
     await refreshQuickSaveSlots()
   }
 }
+
+provide('tacticalMapContext', {
+  mm,
+  backgroundDataUrl,
+  backgroundImageStyle,
+  canvasWidth,
+  canvasHeight,
+  drawMode,
+  drawColor,
+  snapEnabled,
+  touchMoveCostMode,
+  enterDrawMode,
+  toggleFogVisible,
+  setHPDisplayLevel,
+  canvasPointerDown,
+  canvasPointerMove,
+  canvasPointerUp,
+  canvasPointerCancel,
+  canvasPointerLeave,
+  canvasWheel,
+  canvasContextMenu,
+  attachTacticalMap,
+  detachTacticalMap
+})
 </script>
 
 <template>
-  <div ref="containerRef" class="desktop" :class="{ 'desktop--legacy': legacyMode }">
-    <MenuBar :groups="menuGroups" @select="handleMenuSelect" />
-    <input
-      ref="xlsxFileInput"
-      type="file"
-      multiple
-      accept=".xlsx"
-      style="display: none"
-      @change="onXlsxChange"
+  <div class="desktop" :class="{ 'desktop--calculator': calculatorMode }">
+    <SceneSidebar
+      :groups="menuGroups"
+      :home-label="calculatorHomeButtonLabel"
+      :home-active="calculatorMode && calculatorHomeVisible"
+      :opened-actions="openedSidebarActions"
+      :active-action="activeSidebarAction"
+      @select="handleMenuSelect"
     />
-    <SceneToolbar
-      v-if="!legacyMode"
-      :mm="mm"
-      :draw-mode="drawMode"
-      :draw-color="drawColor"
-      :snap-enabled="snapEnabled"
-      :move-cost-mode="touchMoveCostMode"
-      @draw-color-change="drawColor = $event"
-      @snap-enabled-change="snapEnabled = $event"
-      @move-cost-mode-change="touchMoveCostMode = $event"
-      @enter-draw-mode="enterDrawMode"
-      @toggle-fog-visible="toggleFogVisible"
-      @set-hp-display-level="setHPDisplayLevel"
-    />
-    <div v-if="!legacyMode" class="scene-background-layer" aria-hidden="true">
-      <img
-        v-if="mm.bgDataUrl"
-        class="scene-background-image"
-        :src="mm.bgDataUrl"
-        :style="backgroundImageStyle"
+    <div ref="containerRef" class="workspace-content">
+      <input
+        ref="xlsxFileInput"
+        type="file"
+        multiple
+        accept=".xlsx"
+        style="display: none"
+        @change="onXlsxChange"
+      />
+      <CalculatorWorkbench
+        v-if="calculatorMode && calculatorHomeVisible"
+        :character-count="thisCreatures.length"
+        :has-map="Boolean(backgroundDataUrl || mm.tokens.length || mm.drawings.length)"
+        @select="handleMenuSelect"
+      />
+      <SceneDockview
+        :calculator-mode="calculatorMode"
+        :home-visible="!calculatorMode || calculatorHomeVisible"
+        @ready="handleDockviewReady"
       />
     </div>
-    <canvas
-      v-if="!legacyMode"
-      ref="canvasRef"
-      class="scene-canvas"
-      :width="canvasWidth"
-      :height="canvasHeight"
-      @pointerdown="canvasPointerDown"
-      @pointermove="canvasPointerMove"
-      @pointerup="canvasPointerUp"
-      @pointercancel="canvasPointerCancel"
-      @pointerleave="canvasPointerLeave"
-      @wheel.prevent="canvasWheel"
-      @contextmenu.prevent="canvasContextMenu"
-    />
-    <SceneDockview :legacy-mode="legacyMode" @ready="handleDockviewReady" />
-    <SceneTaskbar
-      :panels="taskbarPanels"
-      @restore="restoreMinimizedPanel"
-      @remove="removeMinimizedPanel"
-      @toggle-desktop="toggleShowDesktop"
-    />
   </div>
   <!-- 右键菜单（根层级，不受 desktop overflow 影响）-->
   <ContextMenu
@@ -3790,6 +3764,7 @@ async function buildSaveJson(): Promise<void> {
 
 <style scoped>
 .desktop {
+  display: flex;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -3799,31 +3774,12 @@ async function buildSaveJson(): Promise<void> {
   overscroll-behavior: none;
 }
 
-.scene-background-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+.workspace-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   overflow: hidden;
-  pointer-events: none;
-}
-
-.scene-background-image {
-  position: absolute;
-  top: 0;
-  left: 0;
-  max-width: none;
-  transform-origin: 0 0;
-  will-change: transform;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.scene-canvas {
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  touch-action: none;
 }
 
 .context-menu-backdrop {

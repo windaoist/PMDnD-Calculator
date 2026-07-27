@@ -8,7 +8,6 @@ const api = {
     ipcRenderer.invoke('openLoadDialog') as Promise<{ success: boolean; data?: string }>,
   quickSave: (data: string, slot?: number) => ipcRenderer.invoke('quickSave', data, slot),
   quickLoad: (slot?: number) => ipcRenderer.invoke('quickLoad', slot),
-  loadPresetSave: () => ipcRenderer.invoke('loadPresetSave'),
   quickSaveSlots: () => ipcRenderer.invoke('quickSaveSlots'),
   deleteQuickSave: (slot: number) => ipcRenderer.invoke('deleteQuickSave', slot),
   getSaveDir: () => ipcRenderer.invoke('getSaveDir'),

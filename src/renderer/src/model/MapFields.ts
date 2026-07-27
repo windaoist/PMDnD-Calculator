@@ -1,11 +1,18 @@
 import type { Creature } from './Creature'
 import type { MapDrawing, MapFieldData, MapMemory, MapToken } from './GlobalMemory'
-import { FieldStates, SurfaceStates } from './WeatherField'
+import { ClimateStates, FieldStates, SurfaceStates, WeatherStates } from './WeatherField'
 import { coneTrianglePoints, pointInPolygonInclusive } from './DrawingGeometry'
 
 interface Point {
   x: number
   y: number
+}
+
+interface Bounds {
+  left: number
+  right: number
+  top: number
+  bottom: number
 }
 
 export interface FieldStatusEntry {
@@ -21,6 +28,20 @@ export interface FieldStatusEntry {
 const EPS = 1e-8
 
 const fieldColors: Record<string, string> = {
+  暴晒: '#ffb300',
+  下雨: '#42a5f5',
+  下雪: '#b3e5fc',
+  冰雹: '#80deea',
+  沙尘暴: '#c69c5d',
+  起雾: '#b0bec5',
+  强烈光照: '#ffd54f',
+  光照不足: '#596275',
+  气温上升: '#ef6c00',
+  气温下降: '#4fc3f7',
+  湿度上升: '#26a69a',
+  湿度下降: '#bc8f5a',
+  气压上升: '#78909c',
+  起风: '#90caf9',
   电气场地: '#f2c94c',
   薄雾场地: '#a66bd6',
   精神场地: '#e0569d',
@@ -32,7 +53,12 @@ const fieldColors: Record<string, string> = {
   着火地表: '#ff7043'
 }
 
-export const DrawableFieldStates = [...FieldStates, ...SurfaceStates]
+export const DrawableFieldStates = [
+  ...WeatherStates,
+  ...ClimateStates,
+  ...FieldStates,
+  ...SurfaceStates
+]
 
 export function fieldStatusName(stateName: string): string {
   return `在${stateName}中`
@@ -155,6 +181,189 @@ function angleDiff(a: number, b: number): number {
   return diff
 }
 
+function pointInBounds(p: Point, bounds: Bounds): boolean {
+  return (
+    p.x >= bounds.left - EPS &&
+    p.x <= bounds.right + EPS &&
+    p.y >= bounds.top - EPS &&
+    p.y <= bounds.bottom + EPS
+  )
+}
+
+function boundsCorners(bounds: Bounds): [Point, Point, Point, Point] {
+  return [
+    { x: bounds.left, y: bounds.top },
+    { x: bounds.right, y: bounds.top },
+    { x: bounds.right, y: bounds.bottom },
+    { x: bounds.left, y: bounds.bottom }
+  ]
+}
+
+function cross(a: Point, b: Point, c: Point): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+}
+
+function pointOnSegment(p: Point, a: Point, b: Point): boolean {
+  if (Math.abs(cross(a, b, p)) > EPS) return false
+  return (
+    p.x >= Math.min(a.x, b.x) - EPS &&
+    p.x <= Math.max(a.x, b.x) + EPS &&
+    p.y >= Math.min(a.y, b.y) - EPS &&
+    p.y <= Math.max(a.y, b.y) + EPS
+  )
+}
+
+function segmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {
+  const abC = cross(a, b, c)
+  const abD = cross(a, b, d)
+  const cdA = cross(c, d, a)
+  const cdB = cross(c, d, b)
+  if (
+    ((abC > EPS && abD < -EPS) || (abC < -EPS && abD > EPS)) &&
+    ((cdA > EPS && cdB < -EPS) || (cdA < -EPS && cdB > EPS))
+  ) {
+    return true
+  }
+  return (
+    pointOnSegment(c, a, b) ||
+    pointOnSegment(d, a, b) ||
+    pointOnSegment(a, c, d) ||
+    pointOnSegment(b, c, d)
+  )
+}
+
+function boundsEdges(bounds: Bounds): [Point, Point][] {
+  const corners = boundsCorners(bounds)
+  return corners.map((point, idx) => [point, corners[(idx + 1) % corners.length]])
+}
+
+function polygonIntersectsBounds(polygon: Point[], bounds: Bounds): boolean {
+  if (polygon.length < 3) return false
+  if (polygon.some((point) => pointInBounds(point, bounds))) return true
+  const corners = boundsCorners(bounds)
+  if (corners.some((point) => pointInPolygonInclusive(point, polygon))) return true
+  const edges = boundsEdges(bounds)
+  for (let idx = 0; idx < polygon.length; idx++) {
+    const start = polygon[idx]
+    const end = polygon[(idx + 1) % polygon.length]
+    if (edges.some(([a, b]) => segmentsIntersect(start, end, a, b))) return true
+  }
+  return false
+}
+
+function circleIntersectsBounds(center: Point, radius: number, bounds: Bounds): boolean {
+  const closestX = Math.max(bounds.left, Math.min(center.x, bounds.right))
+  const closestY = Math.max(bounds.top, Math.min(center.y, bounds.bottom))
+  return Math.hypot(center.x - closestX, center.y - closestY) <= radius + EPS
+}
+
+function pointInSector(p: Point, center: Point, direction: number, radius: number, half: number): boolean {
+  const distance = Math.hypot(p.x - center.x, p.y - center.y)
+  if (distance > radius + EPS) return false
+  if (distance <= EPS) return true
+  const angle = Math.atan2(p.y - center.y, p.x - center.x)
+  return Math.abs(angleDiff(angle, direction)) <= half + EPS
+}
+
+function segmentCircleIntersections(
+  start: Point,
+  end: Point,
+  center: Point,
+  radius: number
+): Point[] {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const fx = start.x - center.x
+  const fy = start.y - center.y
+  const a = dx * dx + dy * dy
+  if (a <= EPS) return []
+  const b = 2 * (fx * dx + fy * dy)
+  const c = fx * fx + fy * fy - radius * radius
+  const discriminant = b * b - 4 * a * c
+  if (discriminant < -EPS) return []
+  const root = Math.sqrt(Math.max(0, discriminant))
+  const result: Point[] = []
+  for (const t of [(-b - root) / (2 * a), (-b + root) / (2 * a)]) {
+    if (t >= -EPS && t <= 1 + EPS) {
+      result.push({ x: start.x + dx * t, y: start.y + dy * t })
+    }
+  }
+  return result
+}
+
+function sectorIntersectsBounds(
+  center: Point,
+  edgePoint: Point,
+  angleDegrees: number,
+  bounds: Bounds
+): boolean {
+  const radius = Math.hypot(edgePoint.x - center.x, edgePoint.y - center.y)
+  if (radius <= EPS) return pointInBounds(center, bounds)
+  const direction = Math.atan2(edgePoint.y - center.y, edgePoint.x - center.x)
+  const half = (angleDegrees * Math.PI) / 360
+  if (pointInBounds(center, bounds)) return true
+  if (boundsCorners(bounds).some((point) => pointInSector(point, center, direction, radius, half))) {
+    return true
+  }
+
+  const radialEndA = {
+    x: center.x + radius * Math.cos(direction - half),
+    y: center.y + radius * Math.sin(direction - half)
+  }
+  const radialEndB = {
+    x: center.x + radius * Math.cos(direction + half),
+    y: center.y + radius * Math.sin(direction + half)
+  }
+  const edges = boundsEdges(bounds)
+  if (
+    edges.some(
+      ([a, b]) =>
+        segmentsIntersect(center, radialEndA, a, b) || segmentsIntersect(center, radialEndB, a, b)
+    )
+  ) {
+    return true
+  }
+
+  return edges.some(([a, b]) =>
+    segmentCircleIntersections(a, b, center, radius).some((point) =>
+      pointInSector(point, center, direction, radius, half)
+    )
+  )
+}
+
+export function areaDrawingIntersectsBounds(d: MapDrawing, bounds: Bounds): boolean {
+  if (!isAreaDrawing(d)) return false
+
+  if (d.type == 'rectangle') {
+    const [p1, p2] = d.points
+    return !(
+      Math.max(p1.x, p2.x) < bounds.left - EPS ||
+      Math.min(p1.x, p2.x) > bounds.right + EPS ||
+      Math.max(p1.y, p2.y) < bounds.top - EPS ||
+      Math.min(p1.y, p2.y) > bounds.bottom + EPS
+    )
+  }
+
+  if (d.type == 'polygon') return polygonIntersectsBounds(d.points, bounds)
+
+  if (d.type == 'circle') {
+    const [center, edge] = d.points
+    return circleIntersectsBounds(center, Math.hypot(edge.x - center.x, edge.y - center.y), bounds)
+  }
+
+  if (d.type == 'cone') {
+    const triangle = coneTrianglePoints(d)
+    return triangle ? polygonIntersectsBounds(triangle, bounds) : false
+  }
+
+  if (d.type == 'sector') {
+    const [center, edge] = d.points
+    return sectorIntersectsBounds(center, edge, d.angle || 45, bounds)
+  }
+
+  return false
+}
+
 export function pointInAreaDrawingGrid(p: Point, d: MapDrawing): boolean {
   if (!isAreaDrawing(d)) return false
 
@@ -201,17 +410,14 @@ function creatureFootprint(creature: Creature): number {
   return size < 1 ? 0.5 : Math.floor(size)
 }
 
-function occupiedCellCenters(token: MapToken, footprint: number): Point[] {
-  if (footprint <= 1) return [{ x: token.x, y: token.y }]
-  const centers: Point[] = []
-  const startX = token.x - footprint / 2 + 0.5
-  const startY = token.y - footprint / 2 + 0.5
-  for (let ix = 0; ix < footprint; ix++) {
-    for (let iy = 0; iy < footprint; iy++) {
-      centers.push({ x: startX + ix, y: startY + iy })
-    }
+function tokenBounds(token: MapToken, footprint: number): Bounds {
+  const half = footprint / 2
+  return {
+    left: token.x - half,
+    right: token.x + half,
+    top: token.y - half,
+    bottom: token.y + half
   }
-  return centers
 }
 
 export function creatureIsInFieldDrawing(
@@ -222,8 +428,9 @@ export function creatureIsInFieldDrawing(
   if (!drawingIsField(drawing)) return false
   const token = map.tokens.find((t) => t.code == creature.code())
   if (!token) return false
-  return occupiedCellCenters(token, creatureFootprint(creature)).some((p) =>
-    pointInAreaDrawingGrid(p, drawing)
+  return areaDrawingIntersectsBounds(
+    drawing,
+    tokenBounds(token, creatureFootprint(creature))
   )
 }
 

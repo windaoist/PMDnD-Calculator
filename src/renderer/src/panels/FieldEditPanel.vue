@@ -6,6 +6,7 @@ import { fieldEditMemory, mapMemory } from '@renderer/model/GlobalMemory'
 import {
   applyFieldDataToDrawing,
   convertAreaDrawingsToFields,
+  creatureIsInFieldDrawing,
   DrawableFieldStates,
   drawingIsField,
   fieldColorForState,
@@ -13,12 +14,19 @@ import {
   isAreaDrawing,
   removeFieldDataFromDrawing
 } from '@renderer/model/MapFields'
+import type { EnvCategory, EnvState } from '@renderer/model/WeatherField'
 
 const memory = ref(fieldEditMemory.value)
 const mm = mapMemory.value
 const requestSceneDraw = inject<() => void>('requestSceneDraw', () => {})
 const dcAbilityOptions = ['力量', '敏捷', '体质', '智力', '感知', '魅力']
+const DRAWING_ONLY_OPTION = '__drawing_only__'
 const CUSTOM_FIELD_OPTION = '__custom__'
+const stateCategories: EnvCategory[] = ['天气', '基本气候', '背景场地', '普通场地']
+
+function fieldStatesForCategory(category: EnvCategory): EnvState[] {
+  return DrawableFieldStates.filter((state) => state.category == category)
+}
 
 const areaDrawings = computed(() =>
   mm.drawings
@@ -28,21 +36,44 @@ const areaDrawings = computed(() =>
 
 const selectedDrawing = computed(() => mm.drawings[memory.value.selectedDrawingIdx])
 const selectedIsField = computed(() => drawingIsField(selectedDrawing.value))
+const affectedCreatures = computed(() => {
+  const drawing = selectedDrawing.value
+  if (!drawingIsField(drawing)) return []
+  return Creatures.value.filter((creature) => creatureIsInFieldDrawing(creature, drawing, mm))
+})
 const stateSelectValue = computed<string>({
   get() {
+    if (memory.value.selectedDrawingIdx >= 0 && !selectedIsField.value) {
+      return DRAWING_ONLY_OPTION
+    }
+    if (memory.value.selectedDrawingIdx < 0 && !memory.value.bindNewDrawings) {
+      return DRAWING_ONLY_OPTION
+    }
     return DrawableFieldStates.some((state) => state.name == memory.value.stateName)
       ? memory.value.stateName
       : CUSTOM_FIELD_OPTION
   },
   set(value) {
+    if (value == DRAWING_ONLY_OPTION) {
+      memory.value.bindNewDrawings = false
+      if (memory.value.selectedDrawingIdx >= 0) {
+        removeFieldDataFromDrawing(selectedDrawing.value)
+        requestSceneDraw()
+      }
+      return
+    }
+
+    memory.value.bindNewDrawings = true
     if (value == CUSTOM_FIELD_OPTION) {
       if (DrawableFieldStates.some((state) => state.name == memory.value.stateName)) {
         memory.value.stateName = '自定义场地'
       }
+      if (memory.value.selectedDrawingIdx >= 0) applyToSelected()
       return
     }
     memory.value.stateName = value
     memory.value.color = fieldColorForState(value)
+    if (memory.value.selectedDrawingIdx >= 0) applyToSelected()
   }
 })
 const selectedLabel = computed(() => {
@@ -140,76 +171,98 @@ watch(
       <label>
         类别
         <select v-model="stateSelectValue" class="w3-select w3-border">
-          <option v-for="state in DrawableFieldStates" :key="state.name" :value="state.name">
-            {{ state.category }} / {{ state.name }}
-          </option>
-          <option :value="CUSTOM_FIELD_OPTION">自定义场地</option>
+          <option :value="DRAWING_ONLY_OPTION">仅绘制地图图形</option>
+          <optgroup v-for="category in stateCategories" :key="category" :label="category">
+            <option
+              v-for="state in fieldStatesForCategory(category)"
+              :key="state.name"
+              :value="state.name"
+            >
+              {{ state.name }}
+            </option>
+          </optgroup>
+          <optgroup label="自定义">
+            <option :value="CUSTOM_FIELD_OPTION">自定义场地</option>
+          </optgroup>
         </select>
       </label>
 
-      <label v-if="stateSelectValue == CUSTOM_FIELD_OPTION">
-        自定义名称
-        <input v-model="memory.stateName" class="w3-input w3-border" />
-      </label>
+      <template v-if="stateSelectValue != DRAWING_ONLY_OPTION">
+        <label v-if="stateSelectValue == CUSTOM_FIELD_OPTION">
+          自定义名称
+          <input v-model="memory.stateName" class="w3-input w3-border" />
+        </label>
 
-      <label>
-        颜色
-        <input v-model="memory.color" class="field-color-input" type="color" />
-      </label>
+        <label>
+          颜色
+          <input v-model="memory.color" class="field-color-input" type="color" />
+        </label>
 
-      <label>
-        层数
-        <vue-number-input v-model="memory.layers" size="small" inline center controls :min="1" />
-      </label>
+        <div>
+          层数
+          <vue-number-input v-model="memory.layers" size="small" inline center controls :min="1" />
+        </div>
 
-      <label>
-        剩余回合（-1 无限）
-        <vue-number-input
-          v-model="memory.remainingRounds"
-          size="small"
-          inline
-          center
-          controls
-          :min="-1"
-        />
-      </label>
+        <div>
+          剩余回合（-1 无限）
+          <vue-number-input
+            v-model="memory.remainingRounds"
+            size="small"
+            inline
+            center
+            controls
+            :min="-1"
+          />
+        </div>
 
-      <label>
-        施法者
-        <select v-model="memory.casterCode" class="w3-select w3-border" @change="recalculateDc">
-          <option value="">大自然</option>
-          <option v-for="creature in Creatures" :key="creature.code()" :value="creature.code()">
-            {{ creature.name() }} {{ creature.code() }}
-          </option>
-        </select>
-      </label>
+        <label>
+          施法者
+          <select v-model="memory.casterCode" class="w3-select w3-border" @change="recalculateDc">
+            <option value="">大自然</option>
+            <option v-for="creature in Creatures" :key="creature.code()" :value="creature.code()">
+              {{ creature.name() }} {{ creature.code() }}
+            </option>
+          </select>
+        </label>
 
-      <label>
-        DC 属性
-        <select v-model="memory.dcAbility" class="w3-select w3-border" @change="recalculateDc">
-          <option value="">不指定</option>
-          <option v-for="ability in dcAbilityOptions" :key="ability" :value="ability">
-            {{ ability }}
-          </option>
-        </select>
-      </label>
+        <label>
+          DC 属性
+          <select v-model="memory.dcAbility" class="w3-select w3-border" @change="recalculateDc">
+            <option value="">不指定</option>
+            <option v-for="ability in dcAbilityOptions" :key="ability" :value="ability">
+              {{ ability }}
+            </option>
+          </select>
+        </label>
 
-      <label>
-        固定 DC
-        <vue-number-input v-model="memory.dc" size="small" inline center controls :min="0" />
-      </label>
+        <div>
+          固定 DC
+          <vue-number-input v-model="memory.dc" size="small" inline center controls :min="0" />
+        </div>
+      </template>
     </div>
 
-    <div class="field-preview">
+    <div v-if="stateSelectValue != DRAWING_ONLY_OPTION" class="field-preview">
       <span class="field-swatch" :style="{ background: memory.color }" />
       <span>{{ selectedLabel }}：{{ memory.stateName }} {{ memory.layers }}层</span>
       <span>剩余 {{ fieldRemainingText(memory.remainingRounds) }}</span>
       <span>施法者 {{ memory.casterCode || '大自然' }}</span>
       <span v-if="memory.casterCode"> DC 属性 {{ memory.dcAbility || '不指定' }} </span>
       <span>DC {{ memory.dc }}</span>
+      <span v-if="memory.selectedDrawingIdx >= 0">
+        范围内角色：
+        {{
+          affectedCreatures.length > 0
+            ? affectedCreatures.map((creature) => creature.name()).join('、')
+            : '无'
+        }}
+      </span>
+    </div>
+    <div v-else class="field-preview field-preview--drawing-only">
+      {{ selectedLabel }}：仅绘制地图图形，不附加环境场地数据
     </div>
 
-    <div class="field-actions">
+    <div v-if="stateSelectValue != DRAWING_ONLY_OPTION" class="field-actions">
       <button
         class="w3-button w3-black"
         :disabled="memory.selectedDrawingIdx < 0 || !selectedDrawing"
@@ -224,8 +277,7 @@ watch(
     </div>
 
     <div class="field-note">
-      场地 DC 会写入绘图对象，之后不会随施法者能力变化自动改变。角色是否处于场地内按 token
-      当前位置实时计算。
+      “仅绘制地图图形”不会为新图形附加环境数据；选择天气、基本气候或场地后，新绘制的面积图形会自动绑定当前模板。场地 DC 会写入绘图对象，之后不会随施法者能力变化自动改变。角色是否处于场地内按 token 当前位置实时计算。
     </div>
   </div>
 </template>
@@ -255,6 +307,18 @@ watch(
   gap: 0.25em;
   font-size: 13px;
   color: #555;
+}
+
+.field-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  color: #555;
+  font-size: 13px;
+}
+
+.field-preview--drawing-only {
+  color: #666;
 }
 
 .field-panel :deep(.vue-number-input) {

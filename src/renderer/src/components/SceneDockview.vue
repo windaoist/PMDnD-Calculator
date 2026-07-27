@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { DockviewVue, type DockviewReadyEvent } from 'dockview-vue'
-import { themeLight } from 'dockview-core'
+import { themeDark, themeLight } from 'dockview-core'
+import { appSettings } from '../appSettings'
 import CharacterSheetPanel from '../panels/CharacterSheetPanel.vue'
 import CharacterListPanel from '../panels/CharacterListPanel.vue'
 import CharacterFullPanel from '../panels/CharacterFullPanel.vue'
@@ -22,11 +24,16 @@ import BackgroundSettingsPanel from '../panels/BackgroundSettingsPanel.vue'
 import AboutPanel from '../panels/AboutPanel.vue'
 import FieldEditPanel from '../panels/FieldEditPanel.vue'
 import SettingsPanel from '../panels/SettingsPanel.vue'
+import TacticalMapPanel from '../panels/TacticalMapPanel.vue'
 import DockviewPanelTab from './DockviewPanelTab.vue'
 
 const emit = defineEmits<{ ready: [event: DockviewReadyEvent] }>()
-defineProps<{ legacyMode: boolean }>()
+defineProps<{
+  calculatorMode: boolean
+  homeVisible: boolean
+}>()
 const dockviewPanelTab = DockviewPanelTab as any
+const dockviewTheme = computed(() => (appSettings.themeMode == 'dark' ? themeDark : themeLight))
 
 const dockviewComponents = {
   CharacterSheetPanel,
@@ -49,16 +56,24 @@ const dockviewComponents = {
   BackgroundSettingsPanel,
   AboutPanel,
   FieldEditPanel,
-  SettingsPanel
+  SettingsPanel,
+  TacticalMapPanel
 }
 </script>
 
 <template>
-  <div class="dockview-overlay" :class="{ 'dockview-overlay--legacy': legacyMode }">
+  <div
+    class="dockview-overlay"
+    :class="{
+      'dockview-overlay--calculator': calculatorMode,
+      'dockview-overlay--home': homeVisible
+    }"
+    :aria-hidden="homeVisible"
+  >
     <DockviewVue
-      class="dockview-instance dockview-theme-light"
+      class="dockview-instance"
       :components="dockviewComponents as any"
-      :theme="themeLight"
+      :theme="dockviewTheme"
       :default-tab-component="dockviewPanelTab"
       dndStrategy="pointer"
       floatingGroupBounds="boundedWithinViewport"
@@ -72,7 +87,7 @@ const dockviewComponents = {
   position: absolute;
   top: 0;
   right: 0;
-  bottom: 42px;
+  bottom: 0;
   left: 0;
   z-index: 20;
   pointer-events: none;
@@ -164,32 +179,37 @@ const dockviewComponents = {
   color: #888;
 }
 
-.dockview-overlay--legacy {
-  top: 28px;
-  background: #fff;
-  pointer-events: auto;
+.dockview-overlay--calculator {
+  top: 0;
+  background: transparent;
 }
 
-.dockview-overlay--legacy :deep(.dv-shell),
-.dockview-overlay--legacy :deep(.dv-grid-view),
-.dockview-overlay--legacy :deep(.dv-branch-node),
-.dockview-overlay--legacy :deep(.dv-split-view-container),
-.dockview-overlay--legacy :deep(.dv-view-container),
-.dockview-overlay--legacy :deep(.dv-tab-group-indicator-none) {
-  background: #fff !important;
+.dockview-overlay--home {
+  visibility: hidden;
 }
 
-.dockview-overlay--legacy :deep(.dv-tabs-and-actions-container) {
+.dockview-overlay--calculator :deep(.dv-shell),
+.dockview-overlay--calculator :deep(.dv-grid-view),
+.dockview-overlay--calculator :deep(.dv-branch-node),
+.dockview-overlay--calculator :deep(.dv-split-view-container),
+.dockview-overlay--calculator :deep(.dv-view-container),
+.dockview-overlay--calculator :deep(.dv-tab-group-indicator-none) {
+  background: transparent !important;
+}
+
+.dockview-overlay--calculator :deep(.dv-tabs-and-actions-container) {
   border-radius: 0;
 }
 
-.dockview-overlay--legacy :deep(.dv-groupview) {
+.dockview-overlay--calculator :deep(.dv-groupview) {
+  pointer-events: auto;
+  background: #fff !important;
   border: 1px solid #dedede;
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
   .dockview-overlay {
-    bottom: 48px;
+    bottom: 0;
   }
 
   .dockview-overlay :deep(.dv-resize-container),

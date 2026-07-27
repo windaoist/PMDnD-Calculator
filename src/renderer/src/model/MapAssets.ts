@@ -47,13 +47,6 @@ export function addAssetUsage(asset: MapAsset, usage: 'token' | 'background'): v
   }
 }
 
-export function syncTokenImagesFromAssets(map: MapMemory): void {
-  if (!map.assets) return
-  map.tokenImages = map.assets
-    .filter(assetUsesToken)
-    .map((asset) => ({ key: asset.key, dataUrl: asset.dataUrl }))
-}
-
 export function makeUniqueAssetKey(map: MapMemory, preferred: string): string {
   const raw = preferred.replace(/\.(png)$/i, '').trim() || 'asset'
   let key = raw
@@ -96,14 +89,12 @@ export function upsertMapAsset(
     if (naturalWidth) asset.background.bgWorldW = naturalWidth
     if (naturalHeight) asset.background.bgWorldH = naturalHeight
   }
-  syncTokenImagesFromAssets(map)
   return asset
 }
 
 export function applyAssetAsBackground(map: MapMemory, asset: MapAsset): void {
   addAssetUsage(asset, 'background')
   map.currentBackgroundKey = asset.key
-  map.bgDataUrl = asset.dataUrl
   applyBackgroundSettingsToMap(map, asset.background)
 }
 
@@ -111,7 +102,12 @@ export function saveCurrentBackgroundSettingsToAsset(map: MapMemory, asset: MapA
   asset.background = backgroundSettingsFromMap(map)
 }
 
-export function normalizeMapAssets(map: MapMemory): void {
+export interface LegacyMapImageData {
+  bgDataUrl?: string
+  tokenImages?: { key: string; dataUrl: string }[]
+}
+
+export function normalizeMapAssets(map: MapMemory, legacy: LegacyMapImageData = {}): void {
   if (!map.assets) map.assets = []
 
   for (const asset of map.assets) {
@@ -127,7 +123,7 @@ export function normalizeMapAssets(map: MapMemory): void {
     }
   }
 
-  for (const token of map.tokenImages ?? []) {
+  for (const token of legacy.tokenImages ?? []) {
     if (!map.assets.some((asset) => asset.key == token.key)) {
       map.assets.push({
         key: token.key,
@@ -138,8 +134,8 @@ export function normalizeMapAssets(map: MapMemory): void {
     }
   }
 
-  if (map.bgDataUrl) {
-    const existing = map.assets.find((asset) => asset.dataUrl == map.bgDataUrl)
+  if (legacy.bgDataUrl) {
+    const existing = map.assets.find((asset) => asset.dataUrl == legacy.bgDataUrl)
     if (existing) {
       addAssetUsage(existing, 'background')
       if (!map.currentBackgroundKey) map.currentBackgroundKey = existing.key
@@ -148,7 +144,7 @@ export function normalizeMapAssets(map: MapMemory): void {
       const key = makeUniqueAssetKey(map, map.currentBackgroundKey || 'background')
       map.assets.push({
         key,
-        dataUrl: map.bgDataUrl,
+        dataUrl: legacy.bgDataUrl,
         usage: 'background',
         background: backgroundSettingsFromMap(map)
       })
@@ -156,5 +152,4 @@ export function normalizeMapAssets(map: MapMemory): void {
     }
   }
 
-  syncTokenImagesFromAssets(map)
 }

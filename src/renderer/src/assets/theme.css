@@ -1,0 +1,1070 @@
+:root {
+  --theme-bg: #ffffff;
+  --theme-bg-soft: #f5f6f8;
+  --theme-bg-muted: #eceef2;
+  --theme-surface: #ffffff;
+  --theme-surface-raised: #ffffff;
+  --theme-text: #242936;
+  --theme-text-muted: #687184;
+  --theme-border: #d9dde5;
+  --theme-accent: #6652be;
+  --theme-accent-soft: #e8e5f6;
+  --theme-hover: #eef0f5;
+  --theme-shadow: rgba(25, 34, 50, 0.1);
+}
+
+:root[data-theme='dark'] {
+  --theme-bg: #11151c;
+  --theme-bg-soft: #171c25;
+  --theme-bg-muted: #202631;
+  --theme-surface: #1a202a;
+  --theme-surface-raised: #222936;
+  --theme-text: #e6eaf2;
+  --theme-text-muted: #a6afbf;
+  --theme-border: #343d4b;
+  --theme-accent: #a89af0;
+  --theme-accent-soft: #302b4d;
+  --theme-hover: #282f3b;
+  --theme-shadow: rgba(0, 0, 0, 0.38);
+  --theme-text-secondary: #c8cdd6;
+  --theme-text-tertiary: #9ca3b0;
+  --theme-text-quaternary: #7d8592;
+  --theme-text-faint: #5b6472;
+  --theme-surface-soft: #1e242e;
+  --theme-card-surface: #222936;
+  --theme-chip-bg: #282f3b;
+  --theme-warning-bg: #3d2e0a;
+  --theme-warning-text: #f5d98f;
+  --theme-success-bg: #143e1a;
+  --theme-success-text: #7cd48a;
+  --theme-error-bg: #3d1115;
+  --theme-error-text: #f08a82;
+  --theme-focus-bg: #3d300c;
+  --theme-focus-text: #f0c84d;
+}
+
+html,
+body,
+#app {
+  background: var(--theme-bg);
+  color: var(--theme-text);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+:root[data-theme='dark'] .desktop {
+  background: var(--theme-bg) !important;
+  color: var(--theme-text);
+}
+
+:root[data-theme='dark'] .workbench {
+  color: var(--theme-text) !important;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(132, 112, 220, 0.14), transparent 34%),
+    linear-gradient(145deg, #141922 0%, #10141b 100%) !important;
+}
+
+:root[data-theme='dark'] .workbench::before {
+  background-image:
+    linear-gradient(rgba(180, 192, 214, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 192, 214, 0.045) 1px, transparent 1px) !important;
+}
+
+:root[data-theme='dark'] .intro,
+:root[data-theme='dark'] .session-summary span,
+:root[data-theme='dark'] .section-heading > span,
+:root[data-theme='dark'] .tool-card-description,
+:root[data-theme='dark'] .utility-card > span:last-child,
+:root[data-theme='dark'] .map-copy p:last-child {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .eyebrow,
+:root[data-theme='dark'] .section-kicker {
+  color: var(--theme-accent) !important;
+}
+
+:root[data-theme='dark'] .session-summary,
+:root[data-theme='dark'] .tool-card,
+:root[data-theme='dark'] .utility-card,
+:root[data-theme='dark'] .map-accessory {
+  border-color: var(--theme-border) !important;
+  background: color-mix(in srgb, var(--theme-surface) 92%, transparent) !important;
+  box-shadow: 0 8px 28px var(--theme-shadow) !important;
+}
+
+:root[data-theme='dark'] .shortcut,
+:root[data-theme='dark'] .utility-card:hover {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-bg-muted) !important;
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .scene-sidebar {
+  border-color: var(--theme-border) !important;
+  background: linear-gradient(180deg, #1a202a 0%, #151a22 100%) !important;
+  box-shadow: 2px 0 14px var(--theme-shadow) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .sidebar-header,
+:root[data-theme='dark'] .sidebar-primary,
+:root[data-theme='dark'] .sidebar-items {
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .sidebar-brand-copy small,
+:root[data-theme='dark'] .sidebar-group-heading,
+:root[data-theme='dark'] .sidebar-shortcut {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .sidebar-collapse:hover,
+:root[data-theme='dark'] .sidebar-primary-button:hover,
+:root[data-theme='dark'] .sidebar-primary-button.active,
+:root[data-theme='dark'] .sidebar-group-heading:hover,
+:root[data-theme='dark'] .sidebar-item:hover:not(:disabled),
+:root[data-theme='dark'] .sidebar-nested summary:hover,
+:root[data-theme='dark'] .sidebar-child-item:hover:not(:disabled) {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-accent-soft) !important;
+  color: #c9c0ff !important;
+}
+
+:root[data-theme='dark'] .sidebar-group-heading.opened {
+  color: #c9c0ff !important;
+}
+
+:root[data-theme='dark'] .sidebar-group-heading.opened .sidebar-icon,
+:root[data-theme='dark'] .sidebar-item.opened,
+:root[data-theme='dark'] .sidebar-nested summary.opened,
+:root[data-theme='dark'] .sidebar-child-item.opened {
+  background: var(--theme-accent-soft) !important;
+  color: #d8d2ff !important;
+  box-shadow: inset 3px 0 #8f7ce0;
+}
+
+:root[data-theme='dark'] .sidebar-group-heading.active .sidebar-icon,
+:root[data-theme='dark'] .sidebar-item.active,
+:root[data-theme='dark'] .sidebar-nested summary.active,
+:root[data-theme='dark'] .sidebar-child-item.active {
+  background: #6655ad !important;
+  color: #fff !important;
+  box-shadow: inset 3px 0 #b6a9f2;
+}
+
+:root[data-theme='dark'] .sidebar-separator {
+  background: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .toolbar,
+:root[data-theme='dark'] .context-menu {
+  border-color: var(--theme-border) !important;
+  background: rgba(26, 32, 42, 0.96) !important;
+  color: var(--theme-text) !important;
+  box-shadow: 0 5px 18px var(--theme-shadow) !important;
+}
+
+:root[data-theme='dark'] .toolbar button,
+:root[data-theme='dark'] .toolbar select,
+:root[data-theme='dark'] .context-menu-item {
+  border-color: var(--theme-border);
+  background: transparent;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .toolbar button:hover,
+:root[data-theme='dark'] .context-menu-item:hover {
+  background: var(--theme-hover) !important;
+}
+
+:root[data-theme='dark'] .toolbar button.active {
+  border-color: #7064ac !important;
+  background: #302b4d !important;
+  color: #b9adff !important;
+}
+
+:root[data-theme='dark'] .panel-page,
+:root[data-theme='dark'] .settings-panel,
+:root[data-theme='dark'] .dv-content-container,
+:root[data-theme='dark'] .dv-groupview,
+:root[data-theme='dark'] .dv-groupview-floating {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .dv-groupview-floating,
+:root[data-theme='dark'] .dockview-overlay--calculator .dv-groupview {
+  border-color: var(--theme-border) !important;
+  box-shadow: 0 4px 18px var(--theme-shadow) !important;
+}
+
+:root[data-theme='dark'] .dv-tabs-and-actions-container {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-bg-muted) !important;
+}
+
+:root[data-theme='dark'] .dv-tab {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .dv-tab.dv-active-tab {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .panel-field,
+:root[data-theme='dark'] .panel-field-label,
+:root[data-theme='dark'] .panel-note {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .panel-result,
+:root[data-theme='dark'] .mode-segment,
+:root[data-theme='dark'] .mode-segment button,
+:root[data-theme='dark'] .w3-input,
+:root[data-theme='dark'] .w3-select,
+:root[data-theme='dark'] .vue-number-input input,
+:root[data-theme='dark'] input:not([type='color']):not([type='range']),
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-bg-muted) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .mode-segment button:hover,
+:root[data-theme='dark'] .w3-button:hover {
+  background: var(--theme-hover) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .mode-segment button.active {
+  background: #6652be !important;
+  color: #fff !important;
+}
+
+:root[data-theme='dark'] .w3-white,
+:root[data-theme='dark'] .w3-hover-white:hover {
+  background-color: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .w3-light-grey,
+:root[data-theme='dark'] .w3-light-gray,
+:root[data-theme='dark'] .w3-hover-light-grey:hover,
+:root[data-theme='dark'] .w3-hover-light-gray:hover {
+  background-color: var(--theme-bg-muted) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] table,
+:root[data-theme='dark'] th,
+:root[data-theme='dark'] td {
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] ::selection {
+  background: #6652be;
+  color: #fff;
+}
+
+/* ===== Phase 1: Fix white/light backgrounds ===== */
+
+/* -- CharacterFullPanel backgrounds -- */
+:root[data-theme='dark'] .character-full-panel {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .character-tabs {
+  background-color: var(--theme-bg-muted) !important;
+  border-bottom-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .section-panel {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .section-summary {
+  background: var(--theme-bg-soft) !important;
+}
+
+:root[data-theme='dark'] .character-summary {
+  border-bottom-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .summary-metrics span {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .character-stats-strip span {
+  background: var(--theme-surface-soft) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .resource-card,
+:root[data-theme='dark'] .concentration-card {
+  background: var(--theme-card-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .concentration-card.active {
+  background: var(--theme-focus-bg) !important;
+  border-color: #d6aa23 !important;
+  color: var(--theme-focus-text) !important;
+}
+
+:root[data-theme='dark'] .equipment-tag,
+:root[data-theme='dark'] .item-tag {
+  background-color: var(--theme-chip-bg) !important;
+  border-color: var(--theme-tag-border, #4a5362) !important;
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .resource-percent {
+  background: rgba(26, 32, 42, 0.72) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .danger-zone {
+  border-top-color: var(--theme-border) !important;
+}
+
+/* -- CharacterFullPanel overview mode (translucent overlays) -- */
+:root[data-theme='dark'] .overview-portrait-stage {
+  background: linear-gradient(180deg, rgba(20, 24, 30, 0.4), rgba(42, 34, 28, 0.25)), #1e1b16 !important;
+  border-color: rgba(98, 84, 66, 0.45) !important;
+}
+
+:root[data-theme='dark'] .overview-portrait-stage::after {
+  background: linear-gradient(180deg, rgba(30, 24, 18, 0), rgba(0, 0, 0, 0.45)) !important;
+}
+
+:root[data-theme='dark'] .overview-portrait-fallback {
+  border-color: rgba(98, 84, 66, 0.45) !important;
+  color: rgba(180, 172, 160, 0.7) !important;
+}
+
+:root[data-theme='dark'] .overview-heading,
+:root[data-theme='dark'] .overview-card {
+  background: rgba(34, 41, 54, 0.84) !important;
+  border-color: rgba(98, 84, 66, 0.4) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+:root[data-theme='dark'] .overview-chip-row span,
+:root[data-theme='dark'] .overview-metric-list span {
+  background: rgba(34, 41, 54, 0.78) !important;
+  border-color: rgba(98, 84, 66, 0.38) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .overview-stat {
+  background: rgba(34, 41, 54, 0.64) !important;
+  border-color: rgba(98, 84, 66, 0.35) !important;
+}
+
+:root[data-theme='dark'] .overview-metric-group {
+  background: rgba(34, 41, 54, 0.6) !important;
+  border-color: rgba(98, 84, 66, 0.3) !important;
+}
+
+:root[data-theme='dark'] .overview-metric-grid span {
+  background: rgba(34, 41, 54, 0.68) !important;
+  border-color: rgba(98, 84, 66, 0.28) !important;
+}
+
+:root[data-theme='dark'] .overview-list-item {
+  background: rgba(34, 41, 54, 0.65) !important;
+  border-color: rgba(98, 84, 66, 0.28) !important;
+}
+
+:root[data-theme='dark'] .overview-mode .overview-resource-card {
+  background: rgba(34, 41, 54, 0.82) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+/* -- StatusPanel backgrounds -- */
+:root[data-theme='dark'] .status-creature-identity {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .status-creature-identity code {
+  background: var(--theme-chip-bg) !important;
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .status-tabs {
+  background-color: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .status-tab-button + .status-tab-button {
+  border-left-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .round-indicator {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .round-indicator.active {
+  background: var(--theme-success-bg) !important;
+  border-color: var(--theme-success-border, #2e7d32) !important;
+  color: var(--theme-success-text) !important;
+}
+
+:root[data-theme='dark'] .field-status-row td {
+  background: var(--theme-bg-muted) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .weather-status-row td {
+  background: rgba(61, 46, 10, 0.5) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .manual-convert-button {
+  background: var(--theme-warning-bg) !important;
+  color: var(--theme-warning-text) !important;
+  border-color: #d6aa2b !important;
+}
+
+/* -- InitiativePanel backgrounds -- */
+:root[data-theme='dark'] .initiative-panel {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .init-control-shell {
+  background: var(--theme-bg-muted) !important;
+  border-left-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .initiative-panel--transparent .init-control-shell {
+  background: rgba(26, 32, 42, 0.55) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+:root[data-theme='dark'] .init-controls {
+  background: rgba(26, 32, 42, 0.94) !important;
+  border-color: var(--theme-border) !important;
+  box-shadow: 0 2px 10px var(--theme-shadow) !important;
+}
+
+:root[data-theme='dark'] .initiative-panel--transparent .init-controls {
+  background: rgba(26, 32, 42, 0.72) !important;
+  backdrop-filter: blur(3px) !important;
+}
+
+:root[data-theme='dark'] .init-toggle {
+  color: var(--theme-text-tertiary) !important;
+  border-bottom-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .initiative-panel--transparent .init-toggle {
+  background: rgba(26, 32, 42, 0.45) !important;
+}
+
+:root[data-theme='dark'] .init-toggle:hover {
+  background: var(--theme-accent-soft) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .init-rail-nav {
+  border-top-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .init-rail-button + .init-rail-button {
+  border-left-color: var(--theme-border) !important;
+}
+
+/* -- MultiTargetPanel backgrounds -- */
+:root[data-theme='dark'] .spell-selector-panel {
+  background: var(--theme-bg-soft) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .spell-collapse-button {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .spell-meta-item,
+:root[data-theme='dark'] .spell-config-section {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .spell-warning {
+  background: var(--theme-error-bg) !important;
+  border-color: var(--theme-error-border, #c62828) !important;
+  color: var(--theme-error-text) !important;
+}
+
+:root[data-theme='dark'] .spell-status-pill,
+:root[data-theme='dark'] .spell-stat-pill {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .power-mode-switch {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .power-mode-button.active,
+:root[data-theme='dark'] .spell-toggle.active {
+  background: var(--theme-text) !important;
+  color: var(--theme-bg) !important;
+}
+
+:root[data-theme='dark'] .power-mode-button:disabled {
+  color: var(--theme-text-faint) !important;
+}
+
+:root[data-theme='dark'] .spell-toggle,
+:root[data-theme='dark'] .save-button {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .target-choice {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .target-concentration.active {
+  background: var(--theme-focus-bg) !important;
+  color: var(--theme-focus-text) !important;
+}
+
+:root[data-theme='dark'] .env-auto-pill {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .batch-panel {
+  background: var(--theme-bg-soft) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .batch-group {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .spell-toggle.active {
+  border-color: var(--theme-text) !important;
+}
+
+/* -- FallDamagePanel backgrounds -- */
+:root[data-theme='dark'] .fall-section {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .check-notice {
+  background: var(--theme-warning-bg) !important;
+  color: var(--theme-warning-text) !important;
+  border-left-color: var(--theme-warning-border, #d39b24) !important;
+}
+
+:root[data-theme='dark'] .settlement-message {
+  background: var(--theme-success-bg) !important;
+  border-left-color: var(--theme-success-border, #2e7d32) !important;
+}
+
+:root[data-theme='dark'] .settlement-message textarea {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+
+/* -- WeatherFieldPanel backgrounds -- */
+:root[data-theme='dark'] .weather-panel-toggle {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .weather-panel-toggle:hover {
+  background: var(--theme-hover) !important;
+}
+
+:root[data-theme='dark'] .weather-summary-item {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .env-state-card {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .env-state-card.active {
+  background: var(--theme-success-bg) !important;
+  border-color: var(--theme-success-text) !important;
+}
+
+:root[data-theme='dark'] .env-layer-controls > button {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .env-layer-controls > button:hover {
+  background: var(--theme-hover) !important;
+}
+
+/* -- SettingsPanel backgrounds -- */
+:root[data-theme='dark'] .settings-panel {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .settings-error {
+  background: var(--theme-error-bg) !important;
+  color: var(--theme-error-text) !important;
+  border-left-color: var(--theme-error-border, #c62828) !important;
+}
+
+:root[data-theme='dark'] .mode-segment button {
+  color: var(--theme-text-secondary) !important;
+}
+
+/* -- AssetManagerPanel backgrounds -- */
+:root[data-theme='dark'] .asset-row img,
+:root[data-theme='dark'] .preview-line > img {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .asset-row:hover {
+  background: var(--theme-hover) !important;
+}
+
+:root[data-theme='dark'] .asset-row.active {
+  background: var(--theme-accent-soft) !important;
+}
+
+:root[data-theme='dark'] .asset-list {
+  border-right-color: var(--theme-border) !important;
+}
+
+/* -- BackgroundSettingsPanel backgrounds -- */
+:root[data-theme='dark'] .preview-line img {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+/* -- FieldEditPanel backgrounds -- */
+:root[data-theme='dark'] .field-color-input {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .field-preview {
+  border-top-color: var(--theme-border) !important;
+  border-bottom-color: var(--theme-border) !important;
+}
+
+/* -- RaceStatsPanel backgrounds -- */
+:root[data-theme='dark'] .self-adjustment-validation.valid {
+  background: var(--theme-success-bg) !important;
+  color: var(--theme-success-text) !important;
+  border-color: var(--theme-success-border, #2e7d32) !important;
+}
+
+:root[data-theme='dark'] .self-adjustment-validation.invalid {
+  background: var(--theme-error-bg) !important;
+  color: var(--theme-error-text) !important;
+  border-color: var(--theme-error-border, #c62828) !important;
+}
+
+/* -- GrapplePanel backgrounds -- */
+:root[data-theme='dark'] .rule-grid > div,
+:root[data-theme='dark'] .contest-grid > div,
+:root[data-theme='dark'] .movement-grid > div,
+:root[data-theme='dark'] .result-box {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .rule-grid .bad {
+  background: var(--theme-error-bg) !important;
+}
+
+/* -- BattlePanel / MovePanel backgrounds -- */
+:root[data-theme='dark'] .battle-panel,
+:root[data-theme='dark'] .battle-panel-main {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .move-panel {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .move-panel-header {
+  background: var(--theme-surface) !important;
+  border-bottom-color: var(--theme-border) !important;
+}
+
+/* -- SurvivePanel backgrounds -- */
+:root[data-theme='dark'] .survive-panel {
+  background: var(--theme-bg-soft) !important;
+}
+
+:root[data-theme='dark'] .survive-card {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .mode-tabs {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .mode-button {
+  color: var(--theme-text-secondary) !important;
+  border-right-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .mode-button.active {
+  background: var(--theme-text) !important;
+  color: var(--theme-bg) !important;
+}
+
+:root[data-theme='dark'] .selected-count {
+  background: var(--theme-bg-muted) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+/* -- BattleCharacterSidebar backgrounds -- */
+:root[data-theme='dark'] .battle-character-sidebar {
+  background: var(--theme-bg-soft) !important;
+  border-right-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .sidebar-header {
+  border-bottom-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .sidebar-toggle {
+  background: var(--theme-surface) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .sidebar-toggle:hover {
+  background: var(--theme-hover) !important;
+}
+
+:root[data-theme='dark'] .sidebar-avatar {
+  background: var(--theme-bg-muted) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .dm-row .sidebar-avatar {
+  background: var(--theme-text) !important;
+  color: var(--theme-bg) !important;
+  border-color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .sidebar-row.selected {
+  background: var(--theme-accent) !important;
+  color: #fff !important;
+}
+
+:root[data-theme='dark'] .sidebar-row.selected:hover {
+  background: var(--theme-accent) !important;
+}
+
+:root[data-theme='dark'] .sidebar-row.selected .sidebar-code,
+:root[data-theme='dark'] .sidebar-row.selected .sidebar-pp {
+  color: #fff !important;
+}
+
+:root[data-theme='dark'] .sidebar-row:hover {
+  background: var(--theme-hover) !important;
+}
+
+:root[data-theme='dark'] .sidebar-hp-fill {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* -- ContextMenu backgrounds -- */
+:root[data-theme='dark'] .context-menu {
+  background: var(--theme-surface-raised) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+  box-shadow: 0 4px 16px var(--theme-shadow) !important;
+}
+
+:root[data-theme='dark'] .context-menu-item-disabled {
+  color: var(--theme-text-faint) !important;
+}
+
+:root[data-theme='dark'] .context-menu-item-danger {
+  color: var(--theme-error-text) !important;
+}
+
+:root[data-theme='dark'] .context-menu-item-danger:hover {
+  background: var(--theme-error-bg) !important;
+}
+
+:root[data-theme='dark'] .context-menu-separator {
+  background: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .context-menu-item:hover {
+  background: var(--theme-hover) !important;
+  color: var(--theme-text) !important;
+}
+
+/* -- DockviewPanelTab backgrounds -- */
+:root[data-theme='dark'] .dock-panel-tab-action {
+  color: var(--theme-text-muted) !important;
+  border-left-color: var(--theme-border) !important;
+}
+
+/* -- Character sheet popup override -- */
+:root[data-theme='dark'] .character-sheet-panel,
+:root[data-theme='dark'] [class*="character-sheet"] [style*="background: #fff"] {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .battle-panel [style*="background-color: white"] {
+  background-color: var(--theme-surface) !important;
+}
+
+/* ===== Phase 2: Fix gray text colors ===== */
+
+:root[data-theme='dark'] .section-title,
+:root[data-theme='dark'] .character-full-panel .character-name {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .character-full-panel .character-code,
+:root[data-theme='dark'] .character-full-panel .character-profile,
+:root[data-theme='dark'] .character-full-panel .muted-label,
+:root[data-theme='dark'] .character-full-panel .weight-info {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .status-field-label {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .init-empty {
+  color: var(--theme-text-faint) !important;
+}
+
+:root[data-theme='dark'] .init-turn-info {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .init-turn-current,
+:root[data-theme='dark'] .init-card-name {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .init-rail-button {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .spell-field-label,
+:root[data-theme='dark'] .spell-inline-field > span,
+:root[data-theme='dark'] .spell-meta-item > span,
+:root[data-theme='dark'] .spell-summary-role {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .spell-config-title {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .power-mode-button {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .batch-label,
+:root[data-theme='dark'] .custom-control-hint {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .batch-hint {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .env-auto-title {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .target-concentration {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .result-card small,
+:root[data-theme='dark'] .fall-hint {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .weather-summary-label {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .weather-summary-empty {
+  color: var(--theme-text-quaternary) !important;
+}
+
+:root[data-theme='dark'] .overview-stat strong,
+:root[data-theme='dark'] .overview-metric-grid strong,
+:root[data-theme='dark'] .character-full-panel .overview-card h3 {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .overview-stat span,
+:root[data-theme='dark'] .overview-stat small,
+:root[data-theme='dark'] .overview-list-item small,
+:root[data-theme='dark'] .overview-code,
+:root[data-theme='dark'] .overview-empty,
+:root[data-theme='dark'] .overview-metric-grid em {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .overview-heading p,
+:root[data-theme='dark'] .overview-chip-row span,
+:root[data-theme='dark'] .overview-metric-list span,
+:root[data-theme='dark'] .overview-metric-group h4,
+:root[data-theme='dark'] .overview-list-item p {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .empty-state,
+:root[data-theme='dark'] .muted {
+  color: var(--theme-text-quaternary) !important;
+}
+
+:root[data-theme='dark'] .asset-row small {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .preview-line label,
+:root[data-theme='dark'] .settings-grid label,
+:root[data-theme='dark'] .section-line label,
+:root[data-theme='dark'] .field-panel label,
+:root[data-theme='dark'] .field-note,
+:root[data-theme='dark'] .control-label,
+:root[data-theme='dark'] .exception-control > span,
+:root[data-theme='dark'] .race-explainer,
+:root[data-theme='dark'] .hint,
+:root[data-theme='dark'] .sidebar-code {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .adjustment-input small,
+:root[data-theme='dark'] .lunar-phase-time,
+:root[data-theme='dark'] .tool-label {
+  color: var(--theme-text-faint) !important;
+}
+
+:root[data-theme='dark'] .selected-summary {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .info-label {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .date-text,
+:root[data-theme='dark'] .info-value {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .toolbar button {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='dark'] .toolbar button:hover {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .character-list-panel :is(.w3-button, button) {
+  color: var(--theme-text) !important;
+}
+
+/* ===== Phase 3: Semantic colors ===== */
+
+:root[data-theme='dark'] .copy-row {
+  color: var(--theme-success-text) !important;
+}
+
+:root[data-theme='dark'] .concentration-card {
+  color: var(--theme-text-muted) !important;
+}
+
+:root[data-theme='dark'] .spell-meta-item strong,
+:root[data-theme='dark'] .spell-selector-summary,
+:root[data-theme='dark'] .batch-title {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .spell-toggle {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='dark'] .env-auto-pill {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='dark'] .spell-warning {
+  background: var(--theme-error-bg) !important;
+  color: var(--theme-error-text) !important;
+  border-color: var(--theme-error-border, #c62828) !important;
+}
+
+:root[data-theme='dark'] .power-mode-button.active,
+:root[data-theme='dark'] .spell-toggle.active {
+  background: var(--theme-text) !important;
+  color: var(--theme-bg) !important;
+}
+
+:root[data-theme='dark'] .w3-bordered tr,
+:root[data-theme='dark'] .w3-table-all tr {
+  border-bottom-color: var(--theme-border) !important;
+}
+
+:root[data-theme='dark'] .w3-striped tbody tr:nth-child(even) {
+  background-color: var(--theme-bg-muted) !important;
+}
+
+:root[data-theme='dark'] .w3-table-all tr:nth-child(odd) {
+  background-color: var(--theme-surface) !important;
+}
+
+:root[data-theme='dark'] .field-bind-toggle {
+  color: var(--theme-text) !important;
+}

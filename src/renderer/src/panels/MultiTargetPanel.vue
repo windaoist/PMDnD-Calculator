@@ -26,15 +26,16 @@ import {
   envTypeMdfContributions,
   envEffectIntensity,
   envEffectIntensityContributions,
+  localFieldEffectIntensityContributions,
   getAttackAdvantage,
-  healMdf,
   dicePct,
   applyAttackResult,
   applyHealResult,
   applyHealShieldResult,
   applyStatusResult,
   applyHealStatusResult,
-  applyHealShieldStatusResult
+  applyHealShieldStatusResult,
+  toggleSurviveMemory
 } from '@renderer/model/GlobalMemory'
 import Creatures, { Creature } from '@renderer/model/Creature'
 import {
@@ -68,12 +69,14 @@ const memoryHeal = ref<BattleMemory>(battleMemoryHeal.value)
 const memoryStatus = ref<BattleMemory>(battleMemoryStatus.value)
 const movem = ref<MoveMemory>(moveMemory.value)
 const targets = ref<TargetEntry[]>([])
+const selectedTargetCodes = computed<Set<string>>(() => new Set(movem.value.targetCodes))
 const batchAdvantage = ref<number>(0)
 const batchDiceroll = ref<number>(10)
 const batchDicerollD = ref<number>(0)
 const batchDamageMdfD = ref<number>(0)
 const healMode = ref<'heal' | 'shield'>('heal')
 const statusMode = ref<'damage' | 'heal' | 'shield'>('damage')
+const resolutionSelectionKey = ref('')
 const showMoveDescription = ref(false)
 const casterExpanded = ref(true)
 const damageDefList = ['物理', '特殊']
@@ -94,12 +97,16 @@ function customPowerEnabled(): boolean {
   return memory.value.customPowerEnabled != 0
 }
 
-function isNoPower(): boolean {
+function isNoPowerPlaceholder(power: MovePower | null): boolean {
+  return power != null && power.idx == 0 && power.power == 0 && power.extra.trim().length == 0
+}
+
+function hasPowerSelection(): boolean {
   if (customPowerEnabled() && memory.value.attacker != null && currentMove().name.length > 0) {
-    return false
+    return true
   }
-  const pwr = currentPower()
-  return !pwr || pwr.message() == '无威力'
+  const power = currentPower()
+  return power != null && !isNoPowerPlaceholder(power)
 }
 
 function currentMoveRangeText(): string {
@@ -172,18 +179,25 @@ function normalizeCustomPowerFields(): void {
   }
 }
 
-function syncCustomPowerAttackFields(): void {
-  if (!customPowerEnabled()) return
-  normalizeCustomPowerFields()
-  const mem = memory.value
-  mem.attackType = 1
-  mem.effect = mem.customPower
-  mem.spellType = mem.customPowerDamageType
-  mem.damageType = mem.customPowerDamageType
-  mem.damageDef = mem.customPowerDamageDef
-  mem.damageAspect = mem.customPowerDamageAspect
-  mem.damageDefense = mem.customPowerDamageDef == '物理' ? '物防' : '特防'
-  mem.spellAttack = mem.customPowerDamageDef == '物理' ? '物攻' : '特攻'
+function powerOptionLabel(power: MovePower): string {
+  if (isNoPowerPlaceholder(power)) return '无威力'
+  if (power.power == 0) {
+    const effectType =
+      power.elemType == '治疗' || power.elemType == '护盾'
+        ? power.elemType
+        : `${power.elemType}${power.isStatus ? '状态' : ''}`
+    return `无威力 · ${effectType}${power.extra}`
+  }
+  return power.message()
+}
+
+function resolutionModeLabel(): string {
+  if (atkType.value == 1) return '攻击'
+  if (atkType.value == 2) return healMode.value == 'heal' ? '治疗' : '护盾'
+  if (atkType.value == 3) {
+    return statusMode.value == 'damage' ? '状态伤害' : statusMode.value == 'heal' ? '治疗' : '护盾'
+  }
+  return '无效果'
 }
 
 function canUseDirectDamageMode(): boolean {
@@ -262,7 +276,10 @@ function syncDamageDefense(mem: BattleMemory): void {
 function resetTargetRolls(defaultAdvantage: number): void {
   for (const entry of targets.value) {
     const creature = getCreature(entry.code)
-    const autoCrit = atkType.value == 1 && (creature?.grandStatus().autoCrit ?? false)
+    const autoCrit =
+      !movem.value.dmControlRoll &&
+      atkType.value == 1 &&
+      (creature?.grandStatus().autoCrit ?? false)
     entry.damageMdfD = 0
     entry.diceroll = autoCrit ? 20 : 10
     entry.dicerollD = 0
@@ -325,53 +342,27 @@ function setCurrentMove(): void {
 
   const defaultAdvantage = advantageOverride ?? 0
 
-  if (customPowerEnabled()) {
-    const customKey = [
-      moveNameKey,
-      'custom',
-      memory.value.customPower,
-      memory.value.customPowerDamageType,
-      memory.value.customPowerDamageDef,
-      memory.value.customPowerDamageAspect
-    ].join(':')
-    const isNewPower = customKey != movem.value.lastMoveName
-    memory.value.costPP = costPPOverride
-    memory.value.battleLvD = 0
-    memory.value.ctLimit = 20
-    memory.value.spellName = mov.name
-    memory.value.spellTypeStabD = 0
-    memory.value.spellAttack = spellAttackOverride
-    memory.value.spellAttackD = 0
-    memory.value.spellMod = spellModOverride
-    memory.value.spellModD = 0
-    memory.value.damageDefenseD = 0
-    memory.value.enableCT = 1
-    memory.value.enableMiss = 1
-    memory.value.enableAccuracyAdvance = 1
-    if (isNewPower) {
-      memory.value.damageMdfD = 0
-      memory.value.dicerollD = 0
-      memory.value.diceroll = 10
-      memory.value.advantageDelta = defaultAdvantage
-      memory.value.rollHistory = [10]
-      memory.value.customDamage = 0
-    }
-    syncCustomPowerAttackFields()
-    if (isNewPower) resetTargetRolls(defaultAdvantage)
-    movem.value.lastMoveName = customKey
-    ensureTargetData()
-    return
-  }
-
-  if (!pwr || isNoPower()) {
+  if (!pwr || (isNoPowerPlaceholder(pwr) && !customPowerEnabled())) {
     memory.value.attackType = 0
     movem.value.nullCostPP = costPPOverride
-    movem.value.lastMoveName = moveNameKey
+    movem.value.lastMoveName = pwr ? `${moveNameKey}:${pwr.idx}:move` : moveNameKey
     return
   }
 
   const damageDefense = pwr.psType == '物理' ? '物防' : '特防'
-  const isNewPower = `${moveNameKey}:${pwr.idx}` != movem.value.lastMoveName
+  const selectionKey = `${moveNameKey}:${pwr.idx}`
+  const powerKey = `${selectionKey}:${customPowerEnabled() ? 'custom' : 'move'}`
+  const isNewPower = powerKey != movem.value.lastMoveName
+
+  if (selectionKey != resolutionSelectionKey.value) {
+    if (pwr.isStatus) {
+      statusMode.value =
+        pwr.elemType == '治疗' ? 'heal' : pwr.elemType == '护盾' ? 'shield' : 'damage'
+    } else if (!damageTypeList.includes(pwr.elemType)) {
+      healMode.value = pwr.elemType == '护盾' ? 'shield' : 'heal'
+    }
+    resolutionSelectionKey.value = selectionKey
+  }
 
   if (pwr.isStatus) {
     memory.value.attackType = 3
@@ -470,8 +461,25 @@ function setCurrentMove(): void {
     }
   }
 
+  if (customPowerEnabled()) {
+    normalizeCustomPowerFields()
+    if (memory.value.attackType == 1) {
+      memory.value.effect = memory.value.customPower
+      memory.value.spellType = memory.value.customPowerDamageType
+      memory.value.damageType = memory.value.customPowerDamageType
+      memory.value.damageDef = memory.value.customPowerDamageDef
+      memory.value.damageAspect = memory.value.customPowerDamageAspect
+      memory.value.damageDefense = memory.value.customPowerDamageDef == '物理' ? '物防' : '特防'
+      memory.value.spellAttack = memory.value.customPowerDamageDef == '物理' ? '物攻' : '特攻'
+    } else if (memory.value.attackType == 2) {
+      memoryHeal.value.effect = memory.value.customPower
+    } else if (memory.value.attackType == 3) {
+      memoryStatus.value.effect = memory.value.customPower
+    }
+  }
+
   if (isNewPower) resetTargetRolls(defaultAdvantage)
-  movem.value.lastMoveName = `${moveNameKey}:${pwr.idx}`
+  movem.value.lastMoveName = powerKey
   ensureTargetData()
 }
 
@@ -521,20 +529,26 @@ const envDcContributions = computed<EnvModifierContribution[]>(() => {
 
 const envDamageMdfContributions = computed<EnvModifierContribution[]>(() => {
   const caster = memory.value.attacker
-  if (!caster || currentMove().name.length <= 0 || isNoPower()) return []
+  if (!caster || currentMove().name.length <= 0 || !hasPowerSelection()) return []
   if (atkType.value == 1) {
-    return envTypeMdfContributions([memory.value.damageType, memory.value.damageAspect], caster)
+    return envTypeMdfContributions(
+      [memory.value.damageType, memory.value.damageAspect],
+      caster,
+      null
+    )
   }
   if (atkType.value == 2) {
     return envTypeMdfContributions(
       [memoryHeal.value.damageType, memoryHeal.value.damageAspect],
-      caster
+      caster,
+      null
     )
   }
   if (atkType.value == 3) {
     return envTypeMdfContributions(
       [memoryStatus.value.damageType, memoryStatus.value.damageAspect],
-      caster
+      caster,
+      null
     )
   }
   return []
@@ -556,12 +570,80 @@ function contributionListText(items: EnvModifierContribution[]): string {
 }
 
 function setSaveForTargets(skill: string): void {
+  surviveMemory.value.chosen = new Set(movem.value.targetCodes)
   surviveMemory.value.checkSkill = skill
   surviveMemory.value.isSave = 1
   surviveMemory.value.rollMode = 'save'
   surviveMemory.value.abilityOverride = ''
   surviveMemory.value.difficulty = currentDC()
+  surviveMemory.value.chooseMode = 0
   openPanel?.('SurvivePanel', 'panel-survive', '检定与豁免', {})
+}
+
+function targetFieldEffectContributions(entry: TargetEntry): EnvModifierContribution[] {
+  return localFieldEffectIntensityContributions(
+    currentMove().elemType,
+    getCreature(entry.code) ?? null
+  )
+}
+
+function targetFieldEffectHint(entry: TargetEntry): string {
+  const items = targetFieldEffectContributions(entry)
+  if (items.length == 0) return ''
+  return `非全局场地使效应强度 ${contributionValueText(contributionTotal(items))}：${contributionListText(items)}`
+}
+
+function targetDamageEnvContributions(entry: TargetEntry): EnvModifierContribution[] {
+  const caster = memory.value.attacker
+  const defender = getCreature(entry.code) ?? null
+  if (!caster || !defender) return []
+  if (atkType.value == 1) {
+    return envTypeMdfContributions(
+      [memory.value.damageType, memory.value.damageAspect],
+      caster,
+      defender
+    )
+  }
+  if (atkType.value == 2) {
+    return envTypeMdfContributions(
+      [memoryHeal.value.damageType, memoryHeal.value.damageAspect],
+      caster,
+      defender
+    )
+  }
+  if (atkType.value == 3) {
+    return envTypeMdfContributions(
+      [memoryStatus.value.damageType, memoryStatus.value.damageAspect],
+      caster,
+      defender
+    )
+  }
+  return []
+}
+
+function targetDamageEnvHint(entry: TargetEntry): string {
+  const items = targetDamageEnvContributions(entry)
+  if (items.length == 0) return ''
+  return `环境 ${contributionValueText(contributionTotal(items))}：${contributionListText(items)}`
+}
+
+function openConcentrationSave(entry: TargetEntry, damage: number): void {
+  const defender = getCreature(entry.code)
+  if (!defender || !defender.concentrating || damage <= 0) return
+  toggleSurviveMemory(defender.code(), '专注', 1, defender.concentrationSaveFromDamage(damage))
+  surviveMemory.value.chooseMode = 1
+  openPanel?.('SurvivePanel', 'panel-survive', '检定与豁免', {})
+}
+
+function openDamageDetails(entry: TargetEntry): void {
+  const mem = memory.value
+  const defender = getCreature(entry.code)
+  if (!mem.attacker || !defender) return
+  mem.defender = defender
+  mem.damageMdfD = entry.damageMdfD
+  mem.diceroll = entry.diceroll
+  mem.dicerollD = entry.dicerollD
+  openPanel?.('BattlePanel', 'panel-battle', '伤害详细编辑', {})
 }
 
 watch(
@@ -589,18 +671,22 @@ watch(
     memory.value.customPowerDamageDef,
     memory.value.customPowerDamageAspect
   ],
-  syncCustomPowerAttackFields
+  () => {
+    if (customPowerEnabled()) setCurrentMove()
+  }
 )
 
 function ensureTargetData(): void {
-  const chosen = surviveMemory.value.chosen
   const creaturesByCode = new Map(Creatures.value.map((creature) => [creature.code(), creature]))
   const defenderCodes = new Set(
-    Array.from(chosen).filter((code) => code != 'DM' && creaturesByCode.has(code))
+    movem.value.targetCodes.filter((code) => code != 'DM' && creaturesByCode.has(code))
   )
   for (const code of defenderCodes) {
     const creature = creaturesByCode.get(code)
-    const autoCrit = atkType.value == 1 && (creature?.grandStatus().autoCrit ?? false)
+    const autoCrit =
+      !movem.value.dmControlRoll &&
+      atkType.value == 1 &&
+      (creature?.grandStatus().autoCrit ?? false)
     const existing = targets.value.find((t) => t.code == code)
     if (existing) {
       if (autoCrit) {
@@ -628,7 +714,7 @@ function ensureTargetData(): void {
   targets.value = targets.value.filter((target) => defenderCodes.has(target.code))
 }
 
-watch(() => Array.from(surviveMemory.value.chosen).sort().join('\u0000'), ensureTargetData, {
+watch(() => [...movem.value.targetCodes].sort().join('\u0000'), ensureTargetData, {
   immediate: true
 })
 watch(() => Creatures.value.length, ensureTargetData)
@@ -639,11 +725,10 @@ function getCreature(code: string): Creature | undefined {
 }
 
 function toggleChosen(code: string): void {
-  const chosen = surviveMemory.value.chosen
-  if (chosen.has(code)) {
-    chosen.delete(code)
+  if (selectedTargetCodes.value.has(code)) {
+    movem.value.targetCodes = movem.value.targetCodes.filter((targetCode) => targetCode != code)
   } else {
-    chosen.add(code)
+    movem.value.targetCodes = [...movem.value.targetCodes, code]
   }
   ensureTargetData()
 }
@@ -651,6 +736,11 @@ function toggleChosen(code: string): void {
 // ── 批量操作 ──
 
 function batchRoll(): void {
+  if (movem.value.dmControlRoll) {
+    for (const entry of targets.value) setControlledRoll(entry, batchDiceroll.value)
+    return
+  }
+
   for (const t of targets.value) {
     if (atkType.value == 1) {
       const c = getCreature(t.code)
@@ -678,12 +768,6 @@ function batchSetAdvantage(): void {
   }
 }
 
-function batchSetDiceroll(): void {
-  for (const t of targets.value) {
-    modifyWorldline(t, batchDiceroll.value)
-  }
-}
-
 function batchSetDicerollD(): void {
   for (const t of targets.value) {
     t.dicerollD = batchDicerollD.value
@@ -698,7 +782,6 @@ function batchSetDamageMdf(value: number = batchDamageMdfD.value): void {
 }
 
 watch(batchAdvantage, batchSetAdvantage)
-watch(batchDiceroll, batchSetDiceroll)
 watch(batchDicerollD, batchSetDicerollD)
 watch(batchDamageMdfD, () => batchSetDamageMdf())
 
@@ -710,6 +793,42 @@ function rollSingle(entry: TargetEntry): void {
 function setAutoCrit(entry: TargetEntry): void {
   entry.diceroll = 20
   entry.rollHistory = [20]
+}
+
+function setControlledRoll(entry: TargetEntry, newValue: number): void {
+  const controlledRoll = Math.min(20, Math.max(1, Math.floor(Number(newValue) || 1)))
+  const count = 1 + Math.abs(entry.advantageDelta)
+
+  if (count <= 1) {
+    entry.diceroll = controlledRoll
+    entry.rollHistory = [controlledRoll]
+    return
+  }
+
+  const isAdvantage = entry.advantageDelta > 0
+  const rolls = Array.from({ length: count }, () =>
+    isAdvantage
+      ? Math.floor(Math.random() * controlledRoll) + 1
+      : Math.floor(Math.random() * (21 - controlledRoll)) + controlledRoll
+  )
+
+  // 将其中一枚骰子固定为控骰值；其余骰子受上下界限制，
+  // 从而保证优势取最高、劣势取最低时的最终结果都是控骰值。
+  rolls[Math.floor(Math.random() * count)] = controlledRoll
+  entry.rollHistory = rolls
+  entry.diceroll = controlledRoll
+}
+
+function setEntryDiceroll(entry: TargetEntry, newValue: number): void {
+  if (movem.value.dmControlRoll) {
+    setControlledRoll(entry, newValue)
+  } else {
+    modifyWorldline(entry, newValue)
+  }
+}
+
+function toggleDmControlRoll(): void {
+  movem.value.dmControlRoll = !movem.value.dmControlRoll
 }
 
 function modifyWorldline(entry: TargetEntry, newValue: number): void {
@@ -764,7 +883,9 @@ function computeResult(entry: TargetEntry): TargetResult {
     defender.typeMdf(mem.damageAspect) +
     defender.grandStatus().grandMdf
   const mdf =
-    baseMdf + envTypeMdfTotal([mem.damageType, mem.damageAspect], mem.attacker) + entry.damageMdfD
+    baseMdf +
+    envTypeMdfTotal([mem.damageType, mem.damageAspect], mem.attacker, defender) +
+    entry.damageMdfD
 
   const accAdv =
     mem.enableAccuracyAdvance && entry.diceroll < mem.ctLimit
@@ -827,8 +948,8 @@ function computeHealResult(entry: TargetEntry): HealResult {
 
   const cr = battleLv() + mh.battleLvD
   const stab = spellTypeStabHeal()
-  const rawMdf = healMdf()
-  const mdf = rawMdf - mh.damageMdfD + entry.damageMdfD
+  const mdf =
+    envTypeMdfTotal([mh.damageType, mh.damageAspect], attacker, creature) + entry.damageMdfD
   const healAtk = spellAttackHeal()
   const shieldAtk = spellAttackHealShield()
 
@@ -900,7 +1021,7 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
   const baseMdf = creature.typeMdf(ms.damageType) + creature.typeMdf(ms.damageAspect)
   const mdf =
     baseMdf +
-    envTypeMdfTotal([ms.damageType, ms.damageAspect], memory.value.attacker) +
+    envTypeMdfTotal([ms.damageType, ms.damageAspect], memory.value.attacker, creature) +
     entry.damageMdfD
   const healMdfVal = ms.damageMdfD + entry.damageMdfD
   const customDamage = normalizedCustomDamage(ms)
@@ -1028,7 +1149,7 @@ const logText = computed<string>(() => {
         )
       } else {
         lines.push(
-          `${creature.name()}获得了 ${amt} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [0, amt]))}）。`
+          `${creature.name()}获得了 ${amt} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [0, amt], 1, memoryHeal.value.stackShield))}）。`
         )
       }
     } else if (atkType.value == 3) {
@@ -1052,7 +1173,7 @@ const logText = computed<string>(() => {
         )
       } else {
         lines.push(
-          `${creature.name()}获得了 ${r.shield} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [0, r.shield]))}）。`
+          `${creature.name()}获得了 ${r.shield} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, creature.maxHP(), [0, r.shield], 1, ms.stackShield))}）。`
         )
       }
     }
@@ -1253,7 +1374,7 @@ onUpdated(() => {
             !casterExpanded &&
             memory.attacker != null &&
             currentMove().name.length > 0 &&
-            !isNoPower()
+            hasPowerSelection()
           "
           class="spell-selector-summary"
         >
@@ -1380,7 +1501,7 @@ onUpdated(() => {
 
         <div class="spell-config-grid">
           <section class="spell-config-section spell-config-section-main">
-            <div class="spell-config-title">威力</div>
+            <div class="spell-config-title">威力来源与数值</div>
             <div class="spell-power-row">
               <div class="power-mode-switch" aria-label="威力模式">
                 <button
@@ -1388,14 +1509,14 @@ onUpdated(() => {
                   :class="{ active: currentPowerInputMode() == 'move' }"
                   @click="setPowerInputMode('move')"
                 >
-                  招式威力
+                  使用招式威力
                 </button>
                 <button
                   class="w3-button power-mode-button"
                   :class="{ active: currentPowerInputMode() == 'customPower' }"
                   @click="setPowerInputMode('customPower')"
                 >
-                  自定义威力
+                  手动填写威力
                 </button>
                 <button
                   class="w3-button power-mode-button"
@@ -1403,7 +1524,7 @@ onUpdated(() => {
                   :disabled="!canUseDirectDamageMode()"
                   @click="setPowerInputMode('directDamage')"
                 >
-                  直接伤害
+                  直接填写伤害
                 </button>
               </div>
 
@@ -1424,7 +1545,7 @@ onUpdated(() => {
                         :key="pwr.idx"
                         :value="pwr.idx"
                       >
-                        {{ pwr.message() }}
+                        {{ powerOptionLabel(pwr) }}
                       </option>
                     </select>
                   </label>
@@ -1445,6 +1566,7 @@ onUpdated(() => {
                     />
                   </label>
                   <select
+                    v-if="atkType == 1"
                     v-model="memory.customPowerDamageType"
                     class="w3-select w3-border compact-select"
                   >
@@ -1453,6 +1575,7 @@ onUpdated(() => {
                     </option>
                   </select>
                   <select
+                    v-if="atkType == 1"
                     v-model="memory.customPowerDamageDef"
                     class="w3-select w3-border mini-select"
                   >
@@ -1461,6 +1584,7 @@ onUpdated(() => {
                     </option>
                   </select>
                   <select
+                    v-if="atkType == 1"
                     v-model="memory.customPowerDamageAspect"
                     class="w3-select w3-border compact-select"
                   >
@@ -1468,6 +1592,7 @@ onUpdated(() => {
                       {{ name }}
                     </option>
                   </select>
+                  <span class="spell-stat-pill">按“{{ resolutionModeLabel() }}”结算</span>
                 </template>
 
                 <template v-if="currentPowerInputMode() == 'directDamage'">
@@ -1556,7 +1681,7 @@ onUpdated(() => {
                   v-if="atkType == 1 || atkType == 3"
                   class="spell-inline-field spell-number-field"
                 >
-                  <span>护盾毁伤</span>
+                  <span>对护盾伤害倍率</span>
                   <vue-number-input
                     v-if="atkType == 1"
                     v-model="memory.shieldDamageRatio"
@@ -1631,21 +1756,29 @@ onUpdated(() => {
 
     <div v-if="memory.attacker != null && currentMove().name.length > 0">
       <!-- 目标选择 -->
-      <div v-if="!isNoPower()" style="margin-bottom: 0.75em">
+      <div v-if="hasPowerSelection()" style="margin-bottom: 0.75em">
         <p class="battlepage-item" style="font-weight: bold; margin-bottom: 0.3em">选择目标</p>
-        <div style="display: flex; flex-wrap: wrap; gap: 0.3em">
-          <button
-            v-for="c in Creatures"
-            :key="c.code()"
-            class="w3-button w3-tiny"
-            :class="{
-              'w3-black': surviveMemory.chosen.has(c.code()),
-              'w3-light-gray': !surviveMemory.chosen.has(c.code())
-            }"
-            @click="toggleChosen(c.code())"
-          >
-            {{ c.name() }}
-          </button>
+        <div class="target-choice-list">
+          <div v-for="c in Creatures" :key="c.code()" class="target-choice">
+            <button
+              class="w3-button w3-tiny target-select-button"
+              :class="{
+                'w3-black': selectedTargetCodes.has(c.code()),
+                'w3-light-gray': !selectedTargetCodes.has(c.code())
+              }"
+              @click="toggleChosen(c.code())"
+            >
+              {{ c.name() }}
+            </button>
+            <label
+              class="target-concentration"
+              :class="{ active: c.concentrating }"
+              :title="c.concentrating ? '正在专注；点击取消' : '点击标记为正在专注'"
+            >
+              <input v-model="c.concentrating" type="checkbox" />
+              <span>专注</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -1653,7 +1786,18 @@ onUpdated(() => {
       <div v-if="targets.length > 0" class="batch-panel">
         <div class="batch-header">
           <span class="batch-title">批量操作</span>
-          <button class="w3-button w3-blue batch-roll-button" @click="batchRoll">一键掷骰</button>
+          <div class="batch-header-actions">
+            <button
+              class="w3-button spell-toggle"
+              :class="{ active: movem.dmControlRoll }"
+              @click="toggleDmControlRoll"
+            >
+              {{ movem.dmControlRoll ? '禁用DM控骰' : '启用DM控骰' }}
+            </button>
+            <button class="w3-button w3-blue batch-roll-button" @click="batchRoll">
+              {{ movem.dmControlRoll ? '应用控骰结果' : '一键掷骰' }}
+            </button>
+          </div>
         </div>
         <div class="batch-grid">
           <div
@@ -1775,8 +1919,12 @@ onUpdated(() => {
             <span class="batch-label">调整值</span>
             <vue-number-input v-model="batchDicerollD" size="small" inline center :step="1" />
           </div>
-          <div class="batch-group">
-            <span class="batch-label">掷骰</span>
+          <div
+            v-if="movem.dmControlRoll"
+            class="batch-group"
+            title="填写后点击“应用控骰结果”，才会写入下方目标"
+          >
+            <span class="batch-label">DM控骰结果</span>
             <vue-number-input
               v-model="batchDiceroll"
               size="small"
@@ -1803,6 +1951,8 @@ onUpdated(() => {
               <th>其他调整值</th>
               <th>最终掷骰</th>
               <th style="font-weight: bold">伤害</th>
+              <th>专注豁免</th>
+              <th>伤害详细</th>
             </tr>
           </thead>
           <tbody>
@@ -1810,6 +1960,9 @@ onUpdated(() => {
               <td>
                 {{ results[idx]?.name }}
                 <span style="font-size: small; color: gray">{{ entry.code }}</span>
+                <div v-if="targetFieldEffectHint(entry)" class="target-field-effect-hint">
+                  {{ targetFieldEffectHint(entry) }}
+                </div>
               </td>
               <td>{{ results[idx]?.defValue }}</td>
               <td>
@@ -1820,6 +1973,9 @@ onUpdated(() => {
                   center
                   :step="0.1"
                 />
+                <div v-if="targetDamageEnvHint(entry)" class="target-env-damage-hint">
+                  {{ targetDamageEnvHint(entry) }}
+                </div>
               </td>
               <td>
                 <vue-number-input
@@ -1840,17 +1996,21 @@ onUpdated(() => {
                     :min="1"
                     :max="20"
                     :step="1"
-                    @update:model-value="(v: number) => modifyWorldline(entry, v)"
+                    @update:model-value="(v: number) => setEntryDiceroll(entry, v)"
                   />
                   <button
-                    v-if="getCreature(entry.code)?.grandStatus().autoCrit"
+                    v-if="!movem.dmControlRoll && getCreature(entry.code)?.grandStatus().autoCrit"
                     class="w3-button w3-tiny w3-red"
                     style="color: white"
                     @click="setAutoCrit(entry)"
                   >
                     自动暴击
                   </button>
-                  <button v-else class="w3-button w3-tiny w3-border" @click="rollSingle(entry)">
+                  <button
+                    v-else-if="!movem.dmControlRoll"
+                    class="w3-button w3-tiny w3-border"
+                    @click="rollSingle(entry)"
+                  >
                     🎲
                   </button>
                 </div>
@@ -1871,6 +2031,37 @@ onUpdated(() => {
                   {{ results[idx]?.damage }}
                 </span>
               </td>
+              <td>
+                <button
+                  class="w3-button w3-tiny result-action-button"
+                  :class="{
+                    'w3-amber': getCreature(entry.code)?.concentrating,
+                    'w3-light-gray': !getCreature(entry.code)?.concentrating
+                  }"
+                  :disabled="
+                    !getCreature(entry.code)?.concentrating || (results[idx]?.damage ?? 0) <= 0
+                  "
+                  :title="
+                    getCreature(entry.code)?.concentrating
+                      ? `设置 DC ${getCreature(entry.code)?.concentrationSaveFromDamage(results[idx]?.damage ?? 0)} 的专注豁免`
+                      : '该目标未标记为专注状态'
+                  "
+                  @click="openConcentrationSave(entry, results[idx]?.damage ?? 0)"
+                >
+                  DC
+                  {{
+                    getCreature(entry.code)?.concentrationSaveFromDamage(results[idx]?.damage ?? 0)
+                  }}
+                </button>
+              </td>
+              <td>
+                <button
+                  class="w3-button w3-tiny w3-border result-action-button"
+                  @click="openDamageDetails(entry)"
+                >
+                  打开
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1888,22 +2079,28 @@ onUpdated(() => {
 
       <!-- ── 模式 2：治疗 / 护盾 ── -->
       <div v-if="atkType == 2 && targets.length > 0">
-        <p class="battlepage-item" style="font-weight: bold">
+        <div class="resolution-toolbar">
+          <span class="resolution-label">结算方式</span>
           <button
             class="w3-button w3-tiny"
             :class="{ 'w3-green': healMode == 'heal', 'w3-light-gray': healMode != 'heal' }"
             @click="healMode = 'heal'"
           >
-            治疗模式
+            治疗
           </button>
           <button
             class="w3-button w3-tiny"
             :class="{ 'w3-blue': healMode == 'shield', 'w3-light-gray': healMode != 'shield' }"
             @click="healMode = 'shield'"
           >
-            护盾模式
+            护盾
           </button>
-        </p>
+          <label v-if="healMode == 'shield'" class="shield-stack-option">
+            <input v-model="memoryHeal.stackShield" type="checkbox" />
+            <span>叠加现有护盾（不勾选则取较高值）</span>
+          </label>
+          <span class="resolution-hint">默认按招式记录选择，DM 可在此调整</span>
+        </div>
         <table class="w3-table w3-bordered">
           <thead>
             <tr class="w3-light-gray">
@@ -1922,6 +2119,9 @@ onUpdated(() => {
               <td>
                 {{ healResults[idx]?.name }}
                 <span style="font-size: small; color: gray">{{ entry.code }}</span>
+                <div v-if="targetFieldEffectHint(entry)" class="target-field-effect-hint">
+                  {{ targetFieldEffectHint(entry) }}
+                </div>
               </td>
               <td>
                 {{ getCreature(entry.code)?.currentHP }} / {{ getCreature(entry.code)?.maxHP() }}
@@ -1937,6 +2137,9 @@ onUpdated(() => {
                   center
                   :step="0.1"
                 />
+                <div v-if="targetDamageEnvHint(entry)" class="target-env-damage-hint">
+                  {{ targetDamageEnvHint(entry) }}
+                </div>
               </td>
               <td>
                 <vue-number-input
@@ -1957,9 +2160,15 @@ onUpdated(() => {
                     :min="1"
                     :max="20"
                     :step="1"
-                    @update:model-value="(v: number) => modifyWorldline(entry, v)"
+                    @update:model-value="(v: number) => setEntryDiceroll(entry, v)"
                   />
-                  <button class="w3-button w3-tiny w3-border" @click="rollSingle(entry)">🎲</button>
+                  <button
+                    v-if="!movem.dmControlRoll"
+                    class="w3-button w3-tiny w3-border"
+                    @click="rollSingle(entry)"
+                  >
+                    🎲
+                  </button>
                 </div>
               </td>
               <td>
@@ -2001,7 +2210,8 @@ onUpdated(() => {
 
       <!-- ── 模式 3：状态 ── -->
       <div v-if="atkType == 3 && targets.length > 0">
-        <p class="battlepage-item" style="font-weight: bold">
+        <div class="resolution-toolbar">
+          <span class="resolution-label">结算方式</span>
           <button
             class="w3-button w3-tiny"
             :class="{ 'w3-red': statusMode == 'damage', 'w3-light-gray': statusMode != 'damage' }"
@@ -2023,7 +2233,12 @@ onUpdated(() => {
           >
             护盾
           </button>
-        </p>
+          <label v-if="statusMode == 'shield'" class="shield-stack-option">
+            <input v-model="memoryStatus.stackShield" type="checkbox" />
+            <span>叠加现有护盾（不勾选则取较高值）</span>
+          </label>
+          <span class="resolution-hint">默认按招式记录选择，DM 可在此调整</span>
+        </div>
         <table class="w3-table w3-bordered">
           <thead>
             <tr class="w3-light-gray">
@@ -2044,6 +2259,9 @@ onUpdated(() => {
               <td>
                 {{ statusResults[idx]?.name }}
                 <span style="font-size: small; color: gray">{{ entry.code }}</span>
+                <div v-if="targetFieldEffectHint(entry)" class="target-field-effect-hint">
+                  {{ targetFieldEffectHint(entry) }}
+                </div>
               </td>
               <td>
                 {{ getCreature(entry.code)?.currentHP }} / {{ getCreature(entry.code)?.maxHP() }}
@@ -2059,6 +2277,9 @@ onUpdated(() => {
                   center
                   :step="0.1"
                 />
+                <div v-if="targetDamageEnvHint(entry)" class="target-env-damage-hint">
+                  {{ targetDamageEnvHint(entry) }}
+                </div>
               </td>
               <td>
                 <vue-number-input
@@ -2079,9 +2300,15 @@ onUpdated(() => {
                     :min="1"
                     :max="20"
                     :step="1"
-                    @update:model-value="(v: number) => modifyWorldline(entry, v)"
+                    @update:model-value="(v: number) => setEntryDiceroll(entry, v)"
                   />
-                  <button class="w3-button w3-tiny w3-border" @click="rollSingle(entry)">🎲</button>
+                  <button
+                    v-if="!movem.dmControlRoll"
+                    class="w3-button w3-tiny w3-border"
+                    @click="rollSingle(entry)"
+                  >
+                    🎲
+                  </button>
                 </div>
               </td>
               <td>
@@ -2145,7 +2372,7 @@ onUpdated(() => {
       </div>
     </div>
 
-    <div v-if="isNoPower() || targets.length == 0" style="margin-top: 0.5em">
+    <div v-if="!hasPowerSelection() || targets.length == 0" style="margin-top: 0.5em">
       <button class="w3-button w3-red" @click="applyAllAttack()">消耗 PP</button>
       <button
         class="w3-button w3-light-gray"
@@ -2428,6 +2655,44 @@ onUpdated(() => {
   min-width: 0;
 }
 
+.resolution-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0.55em 0;
+}
+
+.resolution-label {
+  margin-right: 0.2em;
+  color: #57606a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.resolution-hint {
+  color: #6e7781;
+  font-size: 12px;
+}
+
+.shield-stack-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-left: 0.4em;
+  padding: 4px 8px;
+  border: 1px solid #90caf9;
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shield-stack-option input {
+  margin: 0;
+}
+
 .spell-inline-field-power {
   flex: 1 1 24em;
 }
@@ -2508,6 +2773,72 @@ onUpdated(() => {
   margin-top: 0.5em;
 }
 
+.target-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+
+.target-choice {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #d5d9e0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.target-select-button {
+  border-radius: 0;
+}
+
+.target-concentration {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-left: 1px solid #d5d9e0;
+  color: #737b89;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.target-concentration.active {
+  background: #fff3cd;
+  color: #775b00;
+  font-weight: 700;
+}
+
+.target-concentration input {
+  margin: 0;
+}
+
+.target-field-effect-hint {
+  width: 10em;
+  max-width: 100%;
+  margin-top: 0.2em;
+  color: #b15c00;
+  font-size: 0.78em;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.target-env-damage-hint {
+  max-width: 24em;
+  margin-top: 0.2em;
+  color: #5d6470;
+  font-size: 0.72em;
+  line-height: 1.3;
+}
+
+.result-action-button {
+  min-width: 4.8em;
+  white-space: nowrap;
+}
+
 .env-auto-title {
   font-weight: 600;
   color: #444;
@@ -2543,6 +2874,12 @@ onUpdated(() => {
 .batch-title {
   font-weight: 700;
   color: #1f2328;
+}
+
+.batch-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
 }
 
 .batch-roll-button {
@@ -2696,6 +3033,12 @@ onUpdated(() => {
   }
 
   .batch-roll-button {
+    width: 100%;
+  }
+
+  .batch-header-actions {
+    align-items: stretch;
+    flex-direction: column;
     width: 100%;
   }
 

@@ -7,7 +7,6 @@ import {
   makeUniqueAssetKey,
   normalizeMapAssets,
   saveCurrentBackgroundSettingsToAsset,
-  syncTokenImagesFromAssets,
   upsertMapAsset
 } from '@renderer/model/MapAssets'
 
@@ -32,7 +31,6 @@ const currentAsset = computed<MapAsset | null>(() => {
 function applySelectedBackground(): void {
   if (!selectedAsset.value) return
   applyAssetAsBackground(mm, selectedAsset.value)
-  syncTokenImagesFromAssets(mm)
 }
 
 function saveCurrentSettings(): void {
@@ -67,7 +65,6 @@ function importBackground(event: Event): void {
         img.naturalHeight
       )
       applyAssetAsBackground(mm, asset)
-      syncTokenImagesFromAssets(mm)
       selectedKey.value = asset.key
     }
     img.onerror = () => {

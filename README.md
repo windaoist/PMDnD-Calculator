@@ -2,7 +2,7 @@
 <img src="./resources/icon.png" width="160">
 </div>
 
-<h1 align="center">凯特的万事幕后 v3</h1>
+<h1 align="center">PMDnD Calculator</h1>
 
 <p align="center">PMDnD 规则下的 DM 跑团助手</p>
 
@@ -41,7 +41,7 @@ $ npm run dev:web
 ```bash
 # Windows
 $ npm run build:win
-
+$ npm run make:portable
 # macOS
 $ npm run build:mac
 

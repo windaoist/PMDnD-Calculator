@@ -106,16 +106,6 @@ export const webPlatform: AppAPI = {
     return data ? { success: true, data, slot: target } : { success: false, message: '该槽位为空' }
   },
 
-  async loadPresetSave() {
-    try {
-      const response = await fetch('./presets/debug-save.json', { cache: 'no-store' })
-      if (!response.ok) return { success: false, message: `预设存档读取失败：${response.status}` }
-      return { success: true, data: await response.text() }
-    } catch (error) {
-      return { success: false, message: String(error) }
-    }
-  },
-
   async quickSaveSlots() {
     return Array.from({ length: QUICK_SLOT_COUNT }, (_, i) => {
       const slot = i + 1

@@ -1,9 +1,22 @@
 import './assets/main.css'
 import './assets/w3.css'
 import 'dockview-vue/dist/styles/dockview.css'
+import './assets/theme.css'
 
 import { createApp } from 'vue'
 import App from './App.vue'
+
+// A label forwards clicks anywhere in its box to its first form control. For
+// number inputs with +/- controls this can turn a click on nearby blank space
+// into an unintended increment or decrement. Keep clicks inside the number
+// input working, but suppress that label forwarding everywhere else.
+document.addEventListener('click', (event) => {
+  const target = event.target
+  if (!(target instanceof Element) || target.closest('.vue-number-input')) return
+
+  const label = target.closest('label')
+  if (label?.querySelector('.vue-number-input')) event.preventDefault()
+})
 import { initializeAppSettings } from './appSettings'
 import { webPlatform } from './platform/web'
 import CharacterSheetPanel from './panels/CharacterSheetPanel.vue'

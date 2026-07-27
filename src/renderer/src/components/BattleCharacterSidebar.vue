@@ -53,6 +53,7 @@ function creatureTitle(creature: Creature): string {
 <template>
   <div
     v-if="!props.collapsible && !props.includeDm"
+    class="battle-character-sidebar"
     style="
       width: 14em;
       flex-shrink: 0;

@@ -1,10 +1,15 @@
-appId: com.pmdnd.kate
-productName: Kate's Screen
+appId: com.pmdnd.calc
+productName: PMDnD-Calculator
 directories:
   buildResources: build
 files:
+  # Build outputs from other packagers must never be bundled back into app.asar.
+  - '!forge-out/**'
+  - '!dist/**'
+  - '!debug.json'
+  - '!.agents/**'
   - '!**/.vscode/*'
-  - '!src/*'
+  - '!src/**'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
@@ -12,7 +17,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: pmdnd-kate
+  executableName: pmdnd-calculator-dev
   icon: build/icons/win/icon.ico
   target: ['portable', 'nsis']
 nsis:
@@ -22,7 +27,7 @@ nsis:
   createDesktopShortcut: false
 portable:
   artifactName: ${productName}_${version}.${ext}
-  splashImage: build/pmdnd-splash.bmp
+  # splashImage: build/pmdnd-splash.bmp
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -41,6 +46,14 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+electronFuses:
+  # Ignore ELECTRON_RUN_AS_NODE inherited from IDEs and launchers.
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 publish:
   provider: generic
   url: https://example.com/auto-updates

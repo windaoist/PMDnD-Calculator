@@ -1,20 +1,19 @@
 <script setup lang="ts">
 import Creatures from '@renderer/model/Creature'
 import {
+  environmentStatusEntriesForCreature,
   environmentDamageOnTurn,
   envTypeMdfTotal,
-  mapMemory,
   StatusMemory,
-  weatherStatusEntries
+  toggleBattleStatusMemory
 } from '@renderer/model/GlobalMemory'
-import { ref, computed, onBeforeUnmount, nextTick, onUpdated, watch } from 'vue'
+import { ref, computed, inject, onBeforeUnmount, nextTick, onUpdated, watch } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { damageCalcRaw, showHP, handleHP } from '@renderer/model/Damage'
 import { MovePower } from '@renderer/model/DataType'
 import type { Status } from '@renderer/model/DataType'
 import { S_Null, StatusList } from '@renderer/model/Status'
 import { autoResize, toMod, valueToColorBinary } from '@renderer/utils'
-import { fieldRemainingText, fieldStatusesForCreature } from '@renderer/model/MapFields'
 
 type StatusPanelParams = {
   code?: string
@@ -24,7 +23,15 @@ type DockviewPanelProps = StatusPanelParams & {
   params?: StatusPanelParams
 }
 
+type OpenPanelFn = (
+  component: string,
+  id: string,
+  title: string,
+  params?: Record<string, unknown>
+) => void
+
 const props = defineProps<{ params?: DockviewPanelProps }>()
+const openPanel = inject<OpenPanelFn>('openPanel')
 
 function valueToColor(val: number): string {
   if (val == 0) {
@@ -102,10 +109,9 @@ interface StatusDamageEntry {
   key: string
 }
 
-const fieldStatusEntries = computed(() =>
-  fieldStatusesForCreature(memory.value.cur, mapMemory.value)
+const environmentReadonlyEntries = computed(() =>
+  environmentStatusEntriesForCreature(memory.value.cur)
 )
-const weatherReadonlyEntries = computed(() => weatherStatusEntries())
 
 const statusDamageEntries = computed<StatusDamageEntry[]>(() => {
   const cur = memory.value.cur
@@ -147,13 +153,67 @@ const statusDamageEntries = computed<StatusDamageEntry[]>(() => {
   })
 })
 
+const selectedStatusDamageKeys = ref<Set<string>>(new Set())
+const knownStatusDamageKeys = new Set<string>()
+
+watch(
+  statusDamageEntries,
+  (entries) => {
+    const available = new Set(entries.map((entry) => entry.key))
+    const next = new Set([...selectedStatusDamageKeys.value].filter((key) => available.has(key)))
+    for (const entry of entries) {
+      if (!knownStatusDamageKeys.has(entry.key)) next.add(entry.key)
+      knownStatusDamageKeys.add(entry.key)
+    }
+    selectedStatusDamageKeys.value = next
+  },
+  { immediate: true }
+)
+
+const selectedStatusDamageEntries = computed(() =>
+  statusDamageEntries.value.filter((entry) => selectedStatusDamageKeys.value.has(entry.key))
+)
+
+function toggleStatusDamageEntry(key: string, event: Event): void {
+  const next = new Set(selectedStatusDamageKeys.value)
+  if ((event.target as HTMLInputElement).checked) next.add(key)
+  else next.delete(key)
+  selectedStatusDamageKeys.value = next
+}
+
+function selectAllStatusDamage(select: boolean): void {
+  selectedStatusDamageKeys.value = select
+    ? new Set(statusDamageEntries.value.map((entry) => entry.key))
+    : new Set()
+}
+
+function openStatusDamageDetail(entry: StatusDamageEntry): void {
+  const cur = memory.value.cur
+  if (!cur) return
+  const sourceName = entry.pwr.extra.replace(/^[（(]|[）)]$/g, '').trim()
+  toggleBattleStatusMemory(
+    cur.code(),
+    0,
+    sourceName || (entry.source == 'environment' ? '环境状态' : '角色状态'),
+    entry.pwr.power,
+    entry.pwr.elemType == '无属性' ? '无属性' : entry.pwr.elemType,
+    entry.pwr.psType == '物理' ? '物攻' : '特攻',
+    '无加成',
+    entry.pwr.elemType,
+    entry.pwr.aspect,
+    entry.pwr.psType,
+    entry.pwr.psType == '物理' ? '物防' : '特防'
+  )
+  openPanel?.('BattlePanel', 'panel-battle', '伤害详细编辑', {})
+}
+
 const statusDamageLog = computed<string>(() => {
   const cur = memory.value.cur
-  if (!cur || statusDamageEntries.value.length == 0) return ''
+  if (!cur || selectedStatusDamageEntries.value.length == 0) return ''
   const name = cur.name()
   const lines: string[] = []
   let hp = [cur.currentHP, cur.tempHP]
-  for (const e of statusDamageEntries.value) {
+  for (const e of selectedStatusDamageEntries.value) {
     const dt = `${e.pwr.elemType}${e.pwr.psType}${e.pwr.aspect == '无性相' ? '' : e.pwr.aspect}`
     const src = e.pwr.extra.substring(1, e.pwr.extra.length - 1) || '状态'
     const preview = handleHP([...hp], cur.maxHP(), [e.kind == 'heal' ? e.amount : -e.amount, 0])
@@ -179,7 +239,7 @@ function applyAllStatusDamage(): void {
   const cur = memory.value.cur
   if (!cur) return
   navigator.clipboard.writeText(statusDamageLog.value)
-  for (const e of statusDamageEntries.value) {
+  for (const e of selectedStatusDamageEntries.value) {
     if (e.kind == 'heal') {
       cur.takeHP([e.amount, 0])
     } else {
@@ -293,30 +353,17 @@ onUpdated(() => {
               </thead>
               <tbody>
                 <tr
-                  v-for="ws in weatherReadonlyEntries"
-                  :key="`${ws.typeLabel}-${ws.statusName}`"
+                  v-for="entry in environmentReadonlyEntries"
+                  :key="`${entry.typeLabel}-${entry.stateName}`"
                   class="weather-status-row"
                 >
-                  <td>{{ ws.typeLabel }}</td>
+                  <td class="environment-type-cell">{{ entry.typeLabel }}</td>
                   <td>
-                    <span>{{ ws.statusName }}</span>
+                    <span>{{ entry.statusName }}</span>
                   </td>
-                  <td>{{ ws.layers }} 层</td>
+                  <td>{{ entry.layers }} 层</td>
                   <td>只读</td>
-                  <td>{{ ws.details }}</td>
-                </tr>
-                <tr v-for="fs in fieldStatusEntries" :key="fs.stateName" class="field-status-row">
-                  <td>累积</td>
-                  <td>
-                    <span>{{ fs.statusName }}</span>
-                  </td>
-                  <td>{{ fs.layers }} 层</td>
-                  <td>只读</td>
-                  <td>
-                    {{ fs.sourceCount }} 个区域；施法者 {{ fs.casterCodes.join('、') }}；DC
-                    {{ fs.dcs.join(' / ') }}；剩余
-                    {{ fs.remainingRounds.map(fieldRemainingText).join(' / ') }}
-                  </td>
+                  <td>{{ entry.details }}</td>
                 </tr>
                 <tr v-for="s in memory.cur.status.status.filter((x) => x.stack > 0)" :key="s.name">
                   <td>{{ s.type ? '累积' : '持续' }}</td>
@@ -372,14 +419,23 @@ onUpdated(() => {
             <table class="w3-table w3-bordered">
               <thead>
                 <tr class="w3-light-gray">
+                  <th>结算</th>
                   <th>威力</th>
                   <th>属性</th>
                   <th>类型</th>
                   <th>伤害 / 治疗</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="e in statusDamageEntries" :key="e.key">
+                  <td>
+                    <input
+                      type="checkbox"
+                      :checked="selectedStatusDamageKeys.has(e.key)"
+                      @change="toggleStatusDamageEntry(e.key, $event)"
+                    />
+                  </td>
                   <td>{{ e.pwr.power }}</td>
                   <td>
                     {{ e.pwr.elemType }}{{ e.pwr.psType
@@ -395,15 +451,35 @@ onUpdated(() => {
                   >
                     {{ e.kind == 'heal' ? '+' : '-' }}{{ e.amount }}
                   </td>
+                  <td>
+                    <button class="w3-button w3-small w3-blue" @click="openStatusDamageDetail(e)">
+                      详细结算
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
             <button
-              class="w3-button w3-red"
+              class="w3-button w3-light-gray"
               style="margin-top: 0.3em"
+              @click="selectAllStatusDamage(true)"
+            >
+              全选
+            </button>
+            <button
+              class="w3-button w3-light-gray"
+              style="margin-top: 0.3em; margin-left: 0.3em"
+              @click="selectAllStatusDamage(false)"
+            >
+              全不选
+            </button>
+            <button
+              class="w3-button w3-red"
+              style="margin-top: 0.3em; margin-left: 0.3em"
+              :disabled="selectedStatusDamageEntries.length == 0"
               @click="applyAllStatusDamage"
             >
-              全部结算
+              结算已选（{{ selectedStatusDamageEntries.length }}）
             </button>
             <button
               v-if="statusDamageLog.length > 0"
@@ -666,6 +742,12 @@ onUpdated(() => {
 .status-current-table :is(th:nth-child(1), td:nth-child(1)),
 .status-overview-table :is(th:nth-child(1), td:nth-child(1)) {
   width: 5.5rem;
+}
+
+.status-current-table .environment-type-cell {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .status-current-table :is(th:nth-child(2), td:nth-child(2)),

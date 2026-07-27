@@ -65,6 +65,7 @@ export class Creature {
   currentHP: number
   tempHP: number
   currentPP: number
+  concentrating: boolean = false
   skillCountType: string
   tempInitiative: number
 
@@ -226,6 +227,7 @@ export class Creature {
     this.currentHP = isFinite(this.currentHP) ? this.currentHP : 0
     this.tempHP = Math.max(0, isFinite(this.tempHP) ? this.tempHP : 0)
     this.currentPP = isFinite(this.currentPP) ? this.currentPP : 0
+    this.concentrating = Boolean(this.concentrating)
 
     this.action = Math.round(this.action) || 0
     this.bonusAction = Math.round(this.bonusAction) || 0
@@ -289,6 +291,13 @@ export class Creature {
     for (let i = 0; i < this.races.length; i++) {
       this.races[i].validate()
     }
+    const species = this.races.filter((race) => race.type == '种族')
+    const enabledSpecies = species.filter((race) => race.enabled)
+    if (species.length > 0 && enabledSpecies.length == 0) {
+      species[0].enabled = true
+    } else if (enabledSpecies.length > 1) {
+      enabledSpecies.slice(1).forEach((race) => (race.enabled = false))
+    }
 
     for (let i = 0; i < this.moves.length; i++) {
       this.moves[i].validate()
@@ -337,6 +346,10 @@ export class Creature {
     this.refreshGrandStatus()
   }
 
+  contributingRaces(): Race[] {
+    return this.races.filter((race) => race.type != '种族' || race.enabled)
+  }
+
   cachedGrandStatus: Status = S_Null.duplicate()
 
   grandStatus(): Status {
@@ -351,7 +364,7 @@ export class Creature {
   characterLv(): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.lv
     })
     return Math.floor(val)
@@ -360,7 +373,7 @@ export class Creature {
   battleLv(): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.battleLv()
     })
     return Math.floor(val)
@@ -369,7 +382,7 @@ export class Creature {
   battleLvFrom(type: string): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       if (v.type == type) {
         val += v.battleLv()
       }
@@ -380,7 +393,7 @@ export class Creature {
   castLv(): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.castLv()
     })
     return Math.floor(val)
@@ -389,7 +402,7 @@ export class Creature {
   attributeRaw(index: number): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.getAttribute(index)
     })
 
@@ -538,7 +551,7 @@ export class Creature {
   spellCountRaw(): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.spellCount()
     })
     return val
@@ -562,7 +575,7 @@ export class Creature {
   cantripCount(): number {
     // this.validate()
     let val = 0
-    this.races.forEach((v) => {
+    this.contributingRaces().forEach((v) => {
       val += v.cantripCount
     })
     return val
@@ -766,7 +779,7 @@ export class Creature {
   maxPokemonRing(): number {
     let mx = 0
     for (const r of this.races) {
-      if (r.type == '种族') {
+      if (r.type == '种族' && r.enabled) {
         mx = Math.max(mx, r.lv)
       }
     }
@@ -991,8 +1004,12 @@ export class Creature {
     return [this.currentHP, this.tempHP]
   }
 
-  previewHP(delta: number[], shieldDamageRatio: number = 1): number[] {
-    const res = handleHP(this.hpSet(), this.maxHP(), delta, shieldDamageRatio)
+  previewHP(
+    delta: number[],
+    shieldDamageRatio: number = 1,
+    stackShield: boolean = false
+  ): number[] {
+    const res = handleHP(this.hpSet(), this.maxHP(), delta, shieldDamageRatio, stackShield)
     return res
   }
 
@@ -1000,8 +1017,8 @@ export class Creature {
     return (100 * this.hpRatio()).toFixed(2) + '%'
   }
 
-  takeHP(delta: number[], shieldDamageRatio: number = 1): void {
-    const res = this.previewHP(delta, shieldDamageRatio)
+  takeHP(delta: number[], shieldDamageRatio: number = 1, stackShield: boolean = false): void {
+    const res = this.previewHP(delta, shieldDamageRatio, stackShield)
     this.currentHP = res[0]
     this.tempHP = Math.max(0, res[1])
   }

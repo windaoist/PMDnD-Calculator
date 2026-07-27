@@ -25,7 +25,7 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
 <template>
   <div class="panel-page">
     <div class="panel-field-grid">
-      <label class="panel-field">
+      <div class="panel-field">
         <span class="panel-field-label">工匠等级</span>
         <vue-number-input
           v-model="memory.craftLevel"
@@ -36,12 +36,12 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
           :step="10"
           :min="0"
         />
-      </label>
+      </div>
       <div class="panel-field">
         <span class="panel-field-label">工匠系数</span>
         <div class="panel-result">{{ craftCoefVal.toFixed(1) }}</div>
       </div>
-      <label class="panel-field">
+      <div class="panel-field">
         <span class="panel-field-label">武器初始威力</span>
         <vue-number-input
           v-model="memory.craftWeaponPower"
@@ -52,14 +52,14 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
           :step="1"
           :min="0"
         />
-      </label>
+      </div>
       <div class="panel-field">
         <span class="panel-field-label">工匠武器威力</span>
         <div class="panel-result">
           {{ Math.max(0, Math.floor(Math.sqrt(craftCoefVal) * memory.craftWeaponPower)) }}
         </div>
       </div>
-      <label class="panel-field">
+      <div class="panel-field">
         <span class="panel-field-label">自定义防御系数基准</span>
         <vue-number-input
           v-model="memory.craftArmorCoef"
@@ -70,7 +70,7 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
           :step="0.1"
           :min="0"
         />
-      </label>
+      </div>
       <div class="panel-field">
         <span class="panel-field-label">自定义护甲</span>
         <div class="panel-result">

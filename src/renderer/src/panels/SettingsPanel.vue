@@ -5,8 +5,8 @@ import {
   renderScaleOptions,
   resetUiScale,
   setRenderScale,
+  setThemeMode,
   setUiScale,
-  setWorkspaceMode,
   uiScaleOptions
 } from '@renderer/appSettings'
 
@@ -51,6 +51,28 @@ function updateRenderScale(event: Event): void {
       </div>
 
       <div class="setting-row">
+        <span class="setting-label">界面主题</span>
+        <div class="mode-segment" role="group" aria-label="界面主题">
+          <button
+            type="button"
+            :class="{ active: appSettings.themeMode == 'light' }"
+            :aria-pressed="appSettings.themeMode == 'light'"
+            @click="setThemeMode('light')"
+          >
+            日间
+          </button>
+          <button
+            type="button"
+            :class="{ active: appSettings.themeMode == 'dark' }"
+            :aria-pressed="appSettings.themeMode == 'dark'"
+            @click="setThemeMode('dark')"
+          >
+            夜间
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row">
         <label for="render-scale">画布渲染倍率</label>
         <div class="setting-control setting-control--single">
           <select
@@ -63,28 +85,6 @@ function updateRenderScale(event: Event): void {
               {{ scale }}x
             </option>
           </select>
-        </div>
-      </div>
-
-      <div class="setting-row">
-        <span class="setting-label">工作区模式</span>
-        <div class="mode-segment" role="group" aria-label="工作区模式">
-          <button
-            type="button"
-            :class="{ active: appSettings.workspaceMode == 'map' }"
-            :aria-pressed="appSettings.workspaceMode == 'map'"
-            @click="setWorkspaceMode('map')"
-          >
-            地图桌面
-          </button>
-          <button
-            type="button"
-            :class="{ active: appSettings.workspaceMode == 'legacy' }"
-            :aria-pressed="appSettings.workspaceMode == 'legacy'"
-            @click="setWorkspaceMode('legacy')"
-          >
-            Legacy 分屏
-          </button>
         </div>
       </div>
 

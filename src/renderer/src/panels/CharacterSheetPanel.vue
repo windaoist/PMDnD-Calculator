@@ -54,6 +54,22 @@ const creature = computed(() => {
       <div>HP: {{ showHP([creature.currentHP, creature.tempHP]) }} / {{ creature.maxHP() }}</div>
       <div>PP: {{ creature.currentPP }} / {{ creature.maxPP() }}</div>
       <div>移动力: {{ creature.currentMov }}</div>
+      <label
+        style="
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 6px;
+          padding: 3px 7px;
+          border-radius: 4px;
+          background: #fff3cd;
+          color: #6f5700;
+          cursor: pointer;
+        "
+      >
+        <input v-model="creature.concentrating" type="checkbox" />
+        正在专注
+      </label>
       <div style="margin-top: 4px; color: gray">
         物攻 {{ creature.getAttackAttributeByName('物攻') }} 特攻
         {{ creature.getAttackAttributeByName('特攻') }}

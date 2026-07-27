@@ -1,14 +1,34 @@
 <script setup lang="ts">
 import pkg from '../../../../package.json'
+
+const repositoryUrl = 'https://github.com/KatedaEoS/pmdnd-kate-3'
+const licenseUrl = `${repositoryUrl}/blob/main/LICENSE`
 </script>
 
 <template>
   <div class="about-panel">
-    <img src="../assets/dm_kate.png" draggable="false" alt="" />
     <div class="about-copy">
-      <h3>凯特的万事幕后</h3>
-      <div>Version {{ pkg.version }}</div>
-      <div class="artist">Artist: 牙结石雕刻家 & 夜影翎羽</div>
+      <h3>PMDnD计算器</h3>
+      <div class="version">版本 {{ pkg.version }}</div>
+
+      <dl class="about-details">
+        <div>
+          <dt>作者</dt>
+          <dd>全体PMDnD贡献者</dd>
+        </div>
+        <div>
+          <dt>GitHub</dt>
+          <dd>
+            <a :href="repositoryUrl" target="_blank" rel="noreferrer">{{ repositoryUrl }}</a>
+          </dd>
+        </div>
+        <div>
+          <dt>许可证</dt>
+          <dd>
+            <a :href="licenseUrl" target="_blank" rel="noreferrer">AGPL-3.0</a>
+          </dd>
+        </div>
+      </dl>
     </div>
   </div>
 </template>
@@ -19,18 +39,14 @@ import pkg from '../../../../package.json'
   overflow: auto;
   box-sizing: border-box;
   padding: 0.5em;
-  display: grid;
-  grid-template-columns: minmax(120px, 42%) 1fr;
-  gap: 1em;
+  display: flex;
   align-items: center;
-  align-content: center;
+  justify-content: center;
 }
 
-.about-panel img {
-  max-width: 100%;
-  max-height: 200px;
-  object-fit: contain;
-  justify-self: center;
+.about-copy {
+  width: min(100%, 34em);
+  padding: 1em;
 }
 
 .about-copy h3 {
@@ -38,9 +54,33 @@ import pkg from '../../../../package.json'
   margin-bottom: 0.3em;
 }
 
-.artist {
-  margin-top: 0.75em;
-  font-size: 12px;
+.version {
   color: #666;
+}
+
+.about-details {
+  margin: 1.25em 0 0;
+}
+
+.about-details > div {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: 0.75em;
+  padding: 0.55em 0;
+  border-top: 1px solid #ddd;
+}
+
+.about-details dt {
+  font-weight: 600;
+}
+
+.about-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.about-details a {
+  color: #1565c0;
 }
 </style>

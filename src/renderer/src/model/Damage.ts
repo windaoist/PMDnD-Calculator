@@ -26,10 +26,11 @@ export function handleHP(
   hp: number[],
   maxhp: number,
   delta: number[],
-  shieldDamageRatio: number = 1
+  shieldDamageRatio: number = 1,
+  stackShield: boolean = false
 ): number[] {
   const cur = hp[0]
-  let tmp = Math.max(hp[1], delta[1])
+  let tmp = stackShield && delta[1] > 0 ? Math.max(0, hp[1]) + delta[1] : Math.max(hp[1], delta[1])
   let real = cur
   if (delta[0] < 0) {
     const damage = -delta[0]
@@ -41,7 +42,13 @@ export function handleHP(
   } else {
     real += delta[0]
   }
-  return [Math.min(maxhp, real), tmp]
+  // Damage must be subtracted from the actual current HP, even when a
+  // temporary max-HP reduction leaves current HP above the new maximum.
+  // Healing is capped at max HP. If a temporary max-HP reduction leaves the
+  // current HP above that cap, healing does nothing instead of increasing it
+  // further (or reducing it back down to the cap).
+  const nextHP = delta[0] > 0 ? (cur < maxhp ? Math.min(maxhp, real) : cur) : real
+  return [nextHP, tmp]
 }
 
 export function showHP(hp: number[]): string {

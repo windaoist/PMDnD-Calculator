@@ -3,6 +3,7 @@ import { ref, computed, inject, onBeforeUnmount, onMounted, watch } from 'vue'
 import Creatures, { Creature } from '@renderer/model/Creature'
 import { mapMemory, statusMemory, StatusMemory } from '@renderer/model/GlobalMemory'
 import { advanceFieldRounds } from '@renderer/model/MapFields'
+import { assetUsesToken } from '@renderer/model/MapAssets'
 
 const thisCreatures = computed<Creature[]>(() => Creatures.value)
 const memory = ref<StatusMemory>(statusMemory.value)
@@ -243,10 +244,11 @@ function hpPct(c: Creature): number {
 
 // 从 mapMemory 获取 token 图片
 function getTokenImg(code: string, name: string): string | null {
-  if (!mm.tokenImages) return null
   const lower = code.toLowerCase()
-  const entry = mm.tokenImages.find(
-    (t) => t.key == code || t.key.toLowerCase() == lower || t.key == name
+  const entry = mm.assets.find(
+    (asset) =>
+      assetUsesToken(asset) &&
+      (asset.key == code || asset.key.toLowerCase() == lower || asset.key == name)
   )
   return entry?.dataUrl ?? null
 }

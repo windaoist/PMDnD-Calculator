@@ -2,17 +2,21 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import type { IDockviewPanelProps } from 'dockview-core'
-import { ClimateStates, WeatherStates, getEnvState } from '@renderer/model/WeatherField'
+import {
+  ClimateStates,
+  FieldStates,
+  SurfaceStates,
+  WeatherStates,
+  getEnvState
+} from '@renderer/model/WeatherField'
 import {
   envMemory,
   envEffectIntensity,
-  toggleBattleStatusMemory
+  envTypeMdfTotal
 } from '@renderer/model/GlobalMemory'
-import { ElemType, MovePower } from '@renderer/model/DataType'
-import Creatures, { Creature } from '@renderer/model/Creature'
+import { ElemType } from '@renderer/model/DataType'
 
 const props = defineProps<{ params?: IDockviewPanelProps }>()
-const thisCreatures = ref<Creature[]>(Creatures.value)
 const compact = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
 let expandedSize = { width: 760, height: 560 }
@@ -41,6 +45,24 @@ function climateEffective(name: string): number {
   return envMemory.value.getClimateEffective(name)
 }
 
+// ── 全局背景场地 / 普通场地 ──
+
+function fieldLayers(name: string): number {
+  return envMemory.value.getField(name)
+}
+
+function setFieldLayers(name: string, layers: number): void {
+  envMemory.value.setField(name, Math.max(0, Math.floor(layers) || 0))
+}
+
+function surfaceLayers(name: string): number {
+  return envMemory.value.getSurface(name)
+}
+
+function setSurfaceLayers(name: string, layers: number): void {
+  envMemory.value.setSurface(name, Math.max(0, Math.floor(layers) || 0))
+}
+
 const activeWeather = computed(() =>
   WeatherStates.map((state) => ({
     name: state.name,
@@ -53,6 +75,18 @@ const activeClimate = computed(() =>
     name: state.name,
     layers: climateEffective(state.name)
   })).filter((state) => state.layers > 0)
+)
+
+const activeFields = computed(() =>
+  FieldStates.map((state) => ({ name: state.name, layers: fieldLayers(state.name) })).filter(
+    (state) => state.layers > 0
+  )
+)
+
+const activeSurfaces = computed(() =>
+  SurfaceStates.map((state) => ({ name: state.name, layers: surfaceLayers(state.name) })).filter(
+    (state) => state.layers > 0
+  )
 )
 
 async function toggleCompact(): Promise<void> {
@@ -81,7 +115,7 @@ async function toggleCompact(): Promise<void> {
 }
 
 onMounted(() => {
-  props.params?.api.setTitle('天气')
+  props.params?.api.setTitle('天气背景场地')
 })
 
 function activeHints(name: string, layers: number): string[] {
@@ -93,69 +127,15 @@ function activeHints(name: string, layers: number): string[] {
 // ── 有效元素修正汇总 ──
 
 const elementMods = computed<{ elem: string; total: number }[]>(() => {
-  const totals = new Map<string, number>()
-
-  for (const c of ClimateStates) {
-    const layers = envMemory.value.getClimateEffective(c.name)
-    if (layers > 0) {
-      for (let i = 0; i < ElemType.nameList.length; i++) {
-        const v = c.typeMdf.value[i]
-        if (v !== 0) {
-          const name = ElemType.nameList[i]
-          totals.set(name, (totals.get(name) ?? 0) + v * layers)
-        }
-      }
-    }
-  }
-
   const result: { elem: string; total: number }[] = []
   for (const elem of ElemType.nameList) {
-    const t = totals.get(elem)
-    if (t && Math.abs(t) >= 0.001) {
-      result.push({ elem, total: t })
+    const total = envTypeMdfTotal([elem])
+    if (Math.abs(total) >= 0.001) {
+      result.push({ elem, total })
     }
   }
   return result
 })
-
-// ── 状态伤害 / 治疗 ──
-
-function collectMovePowers(): MovePower[] {
-  const res: MovePower[] = []
-
-  const gather = (name: string, layers: number): void => {
-    if (layers <= 0) return
-    const s = getEnvState(name)
-    if (!s) return
-    for (const mp of s.damageOnTurn) {
-      if (mp.power > 0) {
-        res.push(
-          new MovePower(
-            mp.idx,
-            mp.power * layers,
-            mp.elemType,
-            mp.psType,
-            mp.aspect,
-            mp.isStatus,
-            `（${name} ${layers}层）`
-          )
-        )
-      }
-    }
-  }
-
-  for (const [name, layers] of Object.entries(envMemory.value.weatherLayers)) gather(name, layers)
-
-  // 起风 ≥10 层：每回合 5×层数 飞行物理钝击状态伤害
-  const windLayers = envMemory.value.getClimateEffective('起风')
-  if (windLayers >= 10) {
-    res.push(new MovePower(0, 5 * windLayers, '飞行', '物理', '钝击', true, '（起风 ≥10 层）'))
-  }
-
-  return res
-}
-
-const movePowers = computed<MovePower[]>(() => collectMovePowers())
 
 const effectIntensities = computed<{ elem: string; val: number }[]>(() => {
   const result: { elem: string; val: number }[] = []
@@ -166,39 +146,17 @@ const effectIntensities = computed<{ elem: string; val: number }[]>(() => {
   return result
 })
 
-const chosenTarget = ref<string>('')
-
-function applyMovePower(mp: MovePower): void {
-  let targetCode = chosenTarget.value
-  if (!targetCode && thisCreatures.value.length > 0) {
-    targetCode = thisCreatures.value[0].code()
-  }
-  if (!targetCode) return
-  toggleBattleStatusMemory(
-    targetCode,
-    0,
-    mp.extra,
-    mp.power,
-    mp.elemType == '无属性' ? '无属性' : mp.elemType,
-    '物攻',
-    '无加成',
-    mp.elemType,
-    mp.aspect,
-    mp.psType,
-    mp.psType == '物理' ? '物防' : '特防'
-  )
-}
 </script>
 
 <template>
   <div ref="panelRef" class="weather-panel" :class="{ 'weather-panel--compact': compact }">
     <div class="weather-panel-header">
-      <strong>天气</strong>
+      <strong>天气背景场地</strong>
       <button
         class="weather-panel-toggle"
         type="button"
-        :title="compact ? '展开天气编辑' : '最小化为天气参照'"
-        :aria-label="compact ? '展开天气编辑' : '最小化为天气参照'"
+        :title="compact ? '展开天气背景场地编辑' : '最小化为环境参照'"
+        :aria-label="compact ? '展开天气背景场地编辑' : '最小化为环境参照'"
         @click="toggleCompact"
       >
         {{ compact ? '□' : '−' }}
@@ -218,16 +176,38 @@ function applyMovePower(mp: MovePower): void {
           {{ item.name }} {{ item.layers }}层
         </span>
       </div>
+      <div v-if="activeFields.length > 0" class="weather-summary-group">
+        <span class="weather-summary-label">背景场地</span>
+        <span v-for="item in activeFields" :key="item.name" class="weather-summary-item field">
+          {{ item.name }} {{ item.layers }}层
+        </span>
+      </div>
+      <div v-if="activeSurfaces.length > 0" class="weather-summary-group">
+        <span class="weather-summary-label">普通场地</span>
+        <span
+          v-for="item in activeSurfaces"
+          :key="item.name"
+          class="weather-summary-item surface"
+        >
+          {{ item.name }} {{ item.layers }}层
+        </span>
+      </div>
       <div
-        v-if="activeWeather.length == 0 && activeClimate.length == 0"
+        v-if="
+          activeWeather.length == 0 &&
+          activeClimate.length == 0 &&
+          activeFields.length == 0 &&
+          activeSurfaces.length == 0
+        "
         class="weather-summary-empty"
       >
-        无活跃天气或基本气候
+        无活跃天气、气候或场地
       </div>
     </div>
 
     <template v-else>
       <!-- ── 天气 ── -->
+      <h3>天气</h3>
       <div style="display: flex; flex-wrap: wrap; gap: 0.5em; margin-bottom: 1em">
         <div
           v-for="ws in WeatherStates"
@@ -280,8 +260,72 @@ function applyMovePower(mp: MovePower): void {
         </div>
       </div>
 
+      <!-- ── 背景场地 ── -->
+      <h3>背景场地</h3>
+      <div class="env-state-grid">
+        <div
+          v-for="state in FieldStates"
+          :key="state.name"
+          class="env-state-card"
+          :class="{ active: fieldLayers(state.name) > 0 }"
+        >
+          <strong>{{ state.name }}</strong>
+          <div class="env-layer-controls">
+            <button @click="setFieldLayers(state.name, fieldLayers(state.name) - 5)">-5</button>
+            <button @click="setFieldLayers(state.name, fieldLayers(state.name) - 1)">-1</button>
+            <vue-number-input
+              :model-value="fieldLayers(state.name)"
+              size="small"
+              inline
+              center
+              :min="0"
+              :step="5"
+              @update:model-value="(value: number) => setFieldLayers(state.name, value)"
+            />
+            <button @click="setFieldLayers(state.name, fieldLayers(state.name) + 1)">+1</button>
+            <button @click="setFieldLayers(state.name, fieldLayers(state.name) + 5)">+5</button>
+            <span>层</span>
+          </div>
+          <div v-for="hint in activeHints(state.name, fieldLayers(state.name))" :key="hint" class="env-state-hint">
+            ! {{ hint }}
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 普通场地 ── -->
+      <h3>普通场地</h3>
+      <div class="env-state-grid env-state-grid--surface">
+        <div
+          v-for="state in SurfaceStates"
+          :key="state.name"
+          class="env-state-card"
+          :class="{ active: surfaceLayers(state.name) > 0 }"
+        >
+          <strong>{{ state.name }}</strong>
+          <div class="env-layer-controls">
+            <button @click="setSurfaceLayers(state.name, surfaceLayers(state.name) - 5)">-5</button>
+            <button @click="setSurfaceLayers(state.name, surfaceLayers(state.name) - 1)">-1</button>
+            <vue-number-input
+              :model-value="surfaceLayers(state.name)"
+              size="small"
+              inline
+              center
+              :min="0"
+              :step="5"
+              @update:model-value="(value: number) => setSurfaceLayers(state.name, value)"
+            />
+            <button @click="setSurfaceLayers(state.name, surfaceLayers(state.name) + 1)">+1</button>
+            <button @click="setSurfaceLayers(state.name, surfaceLayers(state.name) + 5)">+5</button>
+            <span>层</span>
+          </div>
+          <div v-for="hint in activeHints(state.name, surfaceLayers(state.name))" :key="hint" class="env-state-hint">
+            ! {{ hint }}
+          </div>
+        </div>
+      </div>
+
       <!-- ── 基本气候 ── -->
-      <strong>基本气候</strong>
+      <h3>基本气候</h3>
       <div style="margin-bottom: 1em">
         <div
           v-for="[plus, minus, label] in [
@@ -375,7 +419,7 @@ function applyMovePower(mp: MovePower): void {
       </div>
       <div v-else style="color: gray; margin-bottom: 1em">无活跃的环境状态</div>
       <p style="font-size: small; color: gray">
-        全局天气和气候修正会自动计入伤害计算；地图场地按角色位置另行计算。
+        全局天气、气候和背景场地修正会自动计入伤害计算；地图场地按角色位置叠加计算。
       </p>
 
       <!-- ── 环境效应强度 ── -->
@@ -395,37 +439,9 @@ function applyMovePower(mp: MovePower): void {
       </div>
       <div v-else style="color: gray; margin-bottom: 1em">无环境效应强度</div>
       <p style="font-size: small; color: gray">
-        全局天气和气候加值会自动计入战斗页面的豁免 DC；地图场地按施法者位置另行计算。
+        全局天气、气候和背景场地加值会自动计入战斗页面的豁免 DC；地图场地按施法者位置叠加计算。
       </p>
 
-      <!-- ── 环境状态伤害 / 治疗 ── -->
-      <h3>环境状态伤害 / 治疗</h3>
-      <div v-if="movePowers.length > 0">
-        <p style="font-size: small; color: gray">
-          目标：
-          <select
-            v-model="chosenTarget"
-            class="w3-select w3-border"
-            style="width: auto; display: inline"
-          >
-            <option value="">（选择生物）</option>
-            <option v-for="c in thisCreatures" :key="c.code()" :value="c.code()">
-              {{ c.name() }} {{ c.code() }}
-            </option>
-          </select>
-        </p>
-        <div
-          v-for="(mp, idx) in movePowers"
-          :key="idx"
-          class="w3-padding-small"
-          :class="mp.isStatus && mp.elemType == '无属性' ? 'w3-pale-green' : 'w3-light-gray'"
-          style="display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.3em"
-        >
-          <span>{{ mp.message() }}</span>
-          <button class="w3-button w3-blue" @click="applyMovePower(mp)">跳转</button>
-        </div>
-      </div>
-      <div v-else style="color: gray">无环境状态伤害或治疗</div>
     </template>
   </div>
 </template>
@@ -506,6 +522,14 @@ function applyMovePower(mp: MovePower): void {
   border-left: 3px solid #2196f3;
 }
 
+.weather-summary-item.field {
+  border-left: 3px solid #43a047;
+}
+
+.weather-summary-item.surface {
+  border-left: 3px solid #ff9800;
+}
+
 .weather-summary-empty {
   padding: 3px 0;
   color: #777;
@@ -527,5 +551,55 @@ function applyMovePower(mp: MovePower): void {
 
 .weather-panel .w3-padding-small {
   border: 1px solid #eee;
+}
+
+.env-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15em, 1fr));
+  gap: 0.5em;
+  margin-bottom: 1em;
+}
+
+.env-state-grid--surface {
+  grid-template-columns: repeat(auto-fit, minmax(15em, 20em));
+}
+
+.env-state-card {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #e2e5e9;
+  background: #fafafa;
+}
+
+.env-state-card.active {
+  border-color: #9bc8a1;
+  background: #eef8ef;
+}
+
+.env-layer-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25em;
+  margin-top: 0.35em;
+}
+
+.env-layer-controls > button {
+  min-width: 2.5em;
+  padding: 4px 6px;
+  border: 1px solid #d5d9df;
+  background: #f5f6f7;
+  cursor: pointer;
+}
+
+.env-layer-controls > button:hover {
+  background: #e8f0fe;
+}
+
+.env-state-hint {
+  margin-top: 0.3em;
+  color: #1683d8;
+  font-size: 12px;
+  line-height: 1.35;
 }
 </style>

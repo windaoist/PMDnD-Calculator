@@ -520,13 +520,21 @@ onUpdated(() => {
               memory.defender.grandStatus().grandMdf
             }}
             <span
-              v-if="envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker) != 0"
+              v-if="
+                envTypeMdfTotal(
+                  [memory.damageType, memory.damageAspect],
+                  memory.attacker,
+                  memory.defender
+                ) != 0
+              "
             >
-              + 天气场地
+              + 环境
               {{
-                envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker).toFixed(
-                  1
-                )
+                envTypeMdfTotal(
+                  [memory.damageType, memory.damageAspect],
+                  memory.attacker,
+                  memory.defender
+                ).toFixed(1)
               }}
             </span>
             +
@@ -1156,15 +1164,17 @@ onUpdated(() => {
               v-if="
                 envTypeMdfTotal(
                   [memoryStatus.damageType, memoryStatus.damageAspect],
-                  memory.attacker
+                  memory.attacker,
+                  memory.defender
                 ) != 0
               "
             >
-              + 天气场地
+              + 环境
               {{
                 envTypeMdfTotal(
                   [memoryStatus.damageType, memoryStatus.damageAspect],
-                  memory.attacker
+                  memory.attacker,
+                  memory.defender
                 ).toFixed(1)
               }}
             </span>

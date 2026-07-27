@@ -4,7 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import fs from 'fs'
 
-const title = '凯特的万事幕后'
+const title = 'PMDnD计算器'
 
 const saveDir = join(app.getPath('userData'), 'saves')
 const quickSlotCount = 10
@@ -76,27 +76,6 @@ function chooseQuickLoadSlot(requestedSlot?: number): number | null {
   return latest?.slot ?? null
 }
 
-function presetSaveCandidates(): string[] {
-  return [
-    join(__dirname, '../renderer/presets/debug-save.json'),
-    join(app.getAppPath(), 'src/renderer/public/presets/debug-save.json'),
-    join(process.cwd(), 'src/renderer/public/presets/debug-save.json'),
-    join(process.cwd(), 'debug.json')
-  ]
-}
-
-function readPresetSave(): { success: boolean; data?: string; message?: string } {
-  for (const filePath of presetSaveCandidates()) {
-    if (!fs.existsSync(filePath)) continue
-    try {
-      return { success: true, data: fs.readFileSync(filePath, 'utf-8') }
-    } catch (error) {
-      return { success: false, message: String(error) }
-    }
-  }
-  return { success: false, message: '未找到预设存档文件' }
-}
-
 // IPC handlers (registered once at module level)
 ipcMain.handle('getSaveDir', () => saveDir)
 
@@ -153,8 +132,6 @@ ipcMain.handle('quickLoad', async (_event, slot?: number) => {
   }
 })
 
-ipcMain.handle('loadPresetSave', async () => readPresetSave())
-
 ipcMain.removeHandler('saveState')
 ipcMain.handle('saveState', async (_event, data) => {
   try {
@@ -207,9 +184,22 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
+  const showMainWindow = (): void => {
+    if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show()
+  }
+
+  mainWindow.once('ready-to-show', showMainWindow)
+  // Some Electron/Windows combinations can finish loading a hidden window
+  // without emitting ready-to-show. Do not leave a successfully loaded app
+  // permanently hidden in that case.
+  mainWindow.webContents.once('did-finish-load', showMainWindow)
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL) => {
+      console.error('Renderer failed to load:', { errorCode, errorDescription, validatedURL })
+      showMainWindow()
+    }
+  )
 
   mainWindow.on('close', (e) => {
     if (saveDir) {

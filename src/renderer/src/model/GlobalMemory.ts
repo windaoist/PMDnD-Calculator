@@ -3,9 +3,15 @@ import { Move, MovePower, Status } from './DataType'
 import { d20 } from '../utils'
 import { damageCalcRaw, handleHP, showHP } from './Damage'
 import Creatures, { Creature } from './Creature'
-import { ClimateStates, WeatherStates, getEnvState } from './WeatherField'
+import {
+  ClimateStates,
+  FieldStates,
+  SurfaceStates,
+  WeatherStates,
+  getEnvState
+} from './WeatherField'
 import { S_Null } from './Status'
-import { fieldLayersForCreature } from './MapFields'
+import { fieldLayersForCreature, fieldRemainingText, fieldStatusesForCreature } from './MapFields'
 
 export class MainMemory {
   pageNumber: number
@@ -48,6 +54,9 @@ export class ToolsMemory {
   dropWeight: number
   dropPower: number
   gravity: number
+  improvisedAttackerCode: string
+  improvisedWeaponCode: string
+  improvisedTargetCode: string
 
   craftLevel: number
   craftWeaponPower: number
@@ -66,8 +75,11 @@ export class ToolsMemory {
     this.pageName = ''
     this.dropMeters = 5
     this.dropWeight = 0
-    this.dropPower = 50
+    this.dropPower = 0
     this.gravity = 9.8
+    this.improvisedAttackerCode = ''
+    this.improvisedWeaponCode = ''
+    this.improvisedTargetCode = ''
 
     this.craftLevel = 20
     this.craftWeaponPower = 50
@@ -267,6 +279,20 @@ export interface MapFieldData {
 
 function defaultMapFieldColor(stateName: string): string {
   const colors: Record<string, string> = {
+    暴晒: '#ffb300',
+    下雨: '#42a5f5',
+    下雪: '#b3e5fc',
+    冰雹: '#80deea',
+    沙尘暴: '#c69c5d',
+    起雾: '#b0bec5',
+    强烈光照: '#ffd54f',
+    光照不足: '#596275',
+    气温上升: '#ef6c00',
+    气温下降: '#4fc3f7',
+    湿度上升: '#26a69a',
+    湿度下降: '#bc8f5a',
+    气压上升: '#78909c',
+    起风: '#90caf9',
     电气场地: '#f2c94c',
     薄雾场地: '#a66bd6',
     精神场地: '#e0569d',
@@ -282,6 +308,7 @@ function defaultMapFieldColor(stateName: string): string {
 
 export class FieldEditMemory {
   selectedDrawingIdx: number = -1
+  bindNewDrawings: boolean = false
   stateName: string = '电气场地'
   layers: number = 5
   casterCode: string = ''
@@ -327,7 +354,6 @@ export class MapMemory {
   viewX: number = 0
   viewY: number = 0
   viewScale: number = 1
-  bgDataUrl: string = ''
   bgWorldW: number = 1200
   bgWorldH: number = 800
   gridColor: string = '#888888'
@@ -337,7 +363,6 @@ export class MapMemory {
   fogPolygons: { x: number; y: number }[][] = []
   fogAlpha: number = 0.5
   drawings: MapDrawing[] = []
-  tokenImages: { key: string; dataUrl: string }[] = []
   assets: MapAsset[] = []
   currentBackgroundKey: string = ''
   hpDisplayLevels: Record<string, number> = { 玩家: 2, 友方: 2, 中立: 2, 敌方: 2 }
@@ -470,6 +495,7 @@ export class BattleMemory {
   customPowerDamageAspect: string
   customDamage: number
   shieldDamageRatio: number
+  stackShield: boolean
 
   constructor(type: number) {
     this.attacker = null
@@ -525,6 +551,7 @@ export class BattleMemory {
     this.customPowerDamageAspect = '无性相'
     this.customDamage = 0
     this.shieldDamageRatio = 1
+    this.stackShield = false
 
     if (type == 1) {
       this.enableCT = 1
@@ -853,11 +880,13 @@ function calculateDamageMdfGeneric(
       defender.typeMdf(memory.damageType) +
       defender.typeMdf(memory.damageAspect) +
       defender.grandStatus().grandMdf +
-      envTypeMdfTotal([memory.damageType, memory.damageAspect], attacker) +
+      envTypeMdfTotal([memory.damageType, memory.damageAspect], attacker, defender) +
       memory.damageMdfD
     )
   }
-  return memory.damageMdfD + envTypeMdfTotal([memory.damageType, memory.damageAspect], attacker)
+  return (
+    memory.damageMdfD + envTypeMdfTotal([memory.damageType, memory.damageAspect], attacker, null)
+  )
 }
 
 export function damageMdf(): number {
@@ -884,22 +913,81 @@ export interface EnvModifierContribution {
 }
 
 export interface ReadonlyEnvStatusEntry {
+  stateName: string
   typeLabel: string
   statusName: string
   layers: number
   details: string
 }
 
+function addPositiveLayers(
+  target: Record<string, number>,
+  source: Record<string, number>,
+  categories?: ReadonlySet<string>
+): void {
+  for (const [name, value] of Object.entries(source)) {
+    const state = getEnvState(name)
+    if (value > 0 && (!categories || (state && categories.has(state.category)))) {
+      target[name] = (target[name] ?? 0) + value
+    }
+  }
+}
+
+function attackerWeatherClimateLayers(creature: Creature | null): Record<string, number> {
+  const layers: Record<string, number> = {}
+  addPositiveLayers(layers, envMemory.value.climateBase)
+  addPositiveLayers(layers, envMemory.value.weatherLayers)
+  if (creature) {
+    addPositiveLayers(
+      layers,
+      fieldLayersForCreature(creature, mapMemory.value),
+      new Set(['天气', '基本气候'])
+    )
+  }
+  return layers
+}
+
+function activeFieldLayers(
+  creature: Creature | null = null,
+  includeGlobal = true
+): Record<string, number> {
+  const layers: Record<string, number> = {}
+  const fieldCategories = new Set(['背景场地', '普通场地'])
+  if (includeGlobal) {
+    addPositiveLayers(layers, envMemory.value.fieldLayers, fieldCategories)
+    addPositiveLayers(layers, envMemory.value.surfaceLayers, fieldCategories)
+  }
+  if (creature) {
+    addPositiveLayers(layers, fieldLayersForCreature(creature, mapMemory.value), fieldCategories)
+  }
+  return layers
+}
+
+function fieldClimateEffective(climateName: string, fieldLayers: Record<string, number>): number {
+  const rawLayers = (name: string): number => {
+    let layers = fieldLayers[name] ?? 0
+    for (const weather of WeatherStates) {
+      if (weather.exports.includes(name)) layers += fieldLayers[weather.name] ?? 0
+    }
+    return layers
+  }
+
+  const state = ClimateStates.find((climate) => climate.name == climateName)
+  const own = rawLayers(climateName)
+  return state?.opposite ? Math.max(0, own - rawLayers(state.opposite)) : own
+}
+
 export function envTypeMdfContributions(
   elements: string[],
-  creature: Creature | null = null
+  attacker: Creature | null = null,
+  defender: Creature | null = attacker
 ): EnvModifierContribution[] {
   const result: EnvModifierContribution[] = []
-  const env = envMemory.value
+  const weatherClimateLayers = attackerWeatherClimateLayers(attacker)
 
-  // 气候状态有效层数
+  // 天气和基本气候按攻击者所在位置计算。
   for (const c of ClimateStates) {
-    const layers = env.getClimateEffective(c.name)
+    const layers = fieldClimateEffective(c.name, weatherClimateLayers)
     if (layers > 0) {
       let value = 0
       for (const elem of elements) {
@@ -911,11 +999,11 @@ export function envTypeMdfContributions(
     }
   }
 
-  // 场地状态来自地图上的场地区域，按角色当前位置计算。
-  const fieldLayers = creature ? fieldLayersForCreature(creature, mapMemory.value) : {}
+  // 背景场地和普通场地按受击者所在位置计算；面板场地为全局场地。
+  const fieldLayers = activeFieldLayers(defender)
   for (const [name, layers] of Object.entries(fieldLayers)) {
     const state = getEnvState(name)
-    if (!state) continue
+    if (!state || state.category == '天气' || state.category == '基本气候') continue
     let value = 0
     for (const elem of elements) {
       value += state.typeMdf.get(elem) * layers
@@ -928,19 +1016,27 @@ export function envTypeMdfContributions(
   return result
 }
 
-export function envTypeMdfTotal(elements: string[], creature: Creature | null = null): number {
-  return envTypeMdfContributions(elements, creature).reduce((sum, item) => sum + item.value, 0)
+export function envTypeMdfTotal(
+  elements: string[],
+  attacker: Creature | null = null,
+  defender: Creature | null = attacker
+): number {
+  return envTypeMdfContributions(elements, attacker, defender).reduce(
+    (sum, item) => sum + item.value,
+    0
+  )
 }
 
 export function envEffectIntensityContributions(
   elemType: string,
-  creature: Creature | null = null
+  attacker: Creature | null = null,
+  defender: Creature | null = null
 ): EnvModifierContribution[] {
   const result: EnvModifierContribution[] = []
-  const env = envMemory.value
+  const weatherClimateLayers = attackerWeatherClimateLayers(attacker)
 
   for (const c of ClimateStates) {
-    const layers = env.getClimateEffective(c.name)
+    const layers = fieldClimateEffective(c.name, weatherClimateLayers)
     if (layers >= 5) {
       const value = c.effectIntensity.get(elemType) * Math.floor(layers / 5)
       if (value != 0) {
@@ -949,11 +1045,11 @@ export function envEffectIntensityContributions(
     }
   }
 
-  const fieldLayers = creature ? fieldLayersForCreature(creature, mapMemory.value) : {}
+  const fieldLayers = activeFieldLayers(defender)
   for (const [name, layers] of Object.entries(fieldLayers)) {
     if (layers < 5) continue
     const state = getEnvState(name)
-    if (!state) continue
+    if (!state || state.category == '天气' || state.category == '基本气候') continue
     const value = state.effectIntensity.get(elemType) * Math.floor(layers / 5)
     if (value != 0) {
       result.push({ name, layers, value, source: '场地' })
@@ -981,6 +1077,22 @@ export function envEffectIntensity(elemType: string, creature: Creature | null =
   )
 }
 
+export function localFieldEffectIntensityContributions(
+  elemType: string,
+  defender: Creature | null
+): EnvModifierContribution[] {
+  if (!defender) return []
+  const all = envEffectIntensityContributions(elemType, null, defender)
+  const global = envEffectIntensityContributions(elemType, null, null)
+  const globalByKey = new Map(global.map((item) => [`${item.source}:${item.name}`, item.value]))
+  return all
+    .map((item) => ({
+      ...item,
+      value: item.value - (globalByKey.get(`${item.source}:${item.name}`) ?? 0)
+    }))
+    .filter((item) => item.value != 0)
+}
+
 function envStateDamageText(name: string, layers: number): string {
   const state = getEnvState(name)
   if (!state || state.damageOnTurn.length <= 0) return ''
@@ -1001,6 +1113,7 @@ export function weatherStatusEntries(): ReadonlyEnvStatusEntry[] {
     const damageText = envStateDamageText(w.name, layers)
     if (!damageText && hints.length <= 0) continue
     entries.push({
+      stateName: w.name,
       typeLabel: '天气',
       statusName: `在${w.name}下`,
       layers,
@@ -1014,6 +1127,7 @@ export function weatherStatusEntries(): ReadonlyEnvStatusEntry[] {
     const hints = c.hints.filter((h) => layers >= h.threshold).map((h) => h.text)
     const exported = env.getWeatherExport(c.name)
     entries.push({
+      stateName: c.name,
       typeLabel: '基本气候',
       statusName: `在${c.name}下`,
       layers,
@@ -1027,13 +1141,130 @@ export function weatherStatusEntries(): ReadonlyEnvStatusEntry[] {
           .join('；') || '全局作用'
     })
   }
+  const appendGlobalFieldEntries = (
+    typeLabel: string,
+    states: { name: string }[],
+    layerMap: Record<string, number>
+  ): void => {
+    for (const state of states) {
+      const layers = layerMap[state.name] ?? 0
+      if (layers <= 0) continue
+      const envState = getEnvState(state.name)
+      if (!envState) continue
+      const hints = envState.hints
+        .filter((hint) => layers >= hint.threshold)
+        .map((hint) => hint.text)
+      entries.push({
+        stateName: state.name,
+        typeLabel,
+        statusName: `在${state.name}下`,
+        layers,
+        details:
+          [envStateDamageText(state.name, layers), ...hints].filter(Boolean).join('；') ||
+          '全局作用'
+      })
+    }
+  }
+
+  appendGlobalFieldEntries('背景场地', FieldStates, env.fieldLayers)
+  appendGlobalFieldEntries('普通场地', SurfaceStates, env.surfaceLayers)
+
+  return entries
+}
+
+function localFieldSourceDetails(
+  entry: ReturnType<typeof fieldStatusesForCreature>[number]
+): string {
+  return [
+    `${entry.sourceCount} 个区域`,
+    `施法者 ${entry.casterCodes.join('、')}`,
+    `DC ${entry.dcs.join(' / ')}`,
+    `剩余 ${entry.remainingRounds.map(fieldRemainingText).join(' / ')}`
+  ].join('；')
+}
+
+function fieldEffectDetails(stateName: string, layers: number): string {
+  const state = getEnvState(stateName)
+  if (!state) return ''
+  const hints = state.hints.filter((hint) => layers >= hint.threshold).map((hint) => hint.text)
+  return [envStateDamageText(stateName, layers), ...hints].filter(Boolean).join('；')
+}
+
+function globalEnvironmentLayers(stateName: string): number {
+  const state = getEnvState(stateName)
+  if (!state) return 0
+  if (state.category == '天气') return envMemory.value.getWeather(stateName)
+  if (state.category == '基本气候') return envMemory.value.getClimateEffective(stateName)
+  if (state.category == '背景场地') return envMemory.value.getField(stateName)
+  if (state.category == '普通场地') return envMemory.value.getSurface(stateName)
+  return 0
+}
+
+function mergedEnvironmentTypeLabel(category: string | undefined): string {
+  if (category == '天气') return '全局/局部天气'
+  if (category == '基本气候') return '全局/局部气候'
+  if (category == '普通场地') return '全局/局部场地'
+  return '背景/局部场地'
+}
+
+function localEnvironmentTypeLabel(category: string | undefined): string {
+  if (category == '天气') return '局部天气'
+  if (category == '基本气候') return '局部气候'
+  return '局部场地'
+}
+
+export function environmentStatusEntriesForCreature(
+  creature: Creature | null
+): ReadonlyEnvStatusEntry[] {
+  const entries = weatherStatusEntries().map((entry) => ({ ...entry }))
+
+  for (const local of fieldStatusesForCreature(creature, mapMemory.value)) {
+    const state = getEnvState(local.stateName)
+    const global = entries.find((entry) => entry.stateName == local.stateName)
+    const globalLayers = global?.layers ?? globalEnvironmentLayers(local.stateName)
+    const localDetails = localFieldSourceDetails(local)
+
+    if (globalLayers > 0) {
+      const totalLayers = globalLayers + local.layers
+      const mergedEntry = global ?? {
+        stateName: local.stateName,
+        typeLabel: '',
+        statusName: `在${local.stateName}下`,
+        layers: 0,
+        details: ''
+      }
+      const globalSourceLabel = state?.category == '背景场地' ? '背景' : '全局'
+      mergedEntry.typeLabel = mergedEnvironmentTypeLabel(state?.category)
+      mergedEntry.layers = totalLayers
+      mergedEntry.details = [
+        `${globalSourceLabel} ${globalLayers} 层 + 局部 ${local.layers} 层（${localDetails}）`,
+        fieldEffectDetails(local.stateName, totalLayers)
+      ]
+        .filter(Boolean)
+        .join('；')
+      if (!global) entries.push(mergedEntry)
+      continue
+    }
+
+    entries.push({
+      stateName: local.stateName,
+      typeLabel: localEnvironmentTypeLabel(state?.category),
+      statusName: `在${local.stateName}下`,
+      layers: local.layers,
+      details: [
+        `局部 ${local.layers} 层（${localDetails}）`,
+        fieldEffectDetails(local.stateName, local.layers)
+      ]
+        .filter(Boolean)
+        .join('；')
+    })
+  }
 
   return entries
 }
 
 export function environmentDamageOnTurn(creature: Creature | null): MovePower[] {
   const res: MovePower[] = []
-  const env = envMemory.value
 
   const gather = (name: string, layers: number): void => {
     if (layers <= 0) return
@@ -1055,19 +1286,29 @@ export function environmentDamageOnTurn(creature: Creature | null): MovePower[] 
     }
   }
 
-  for (const [name, layers] of Object.entries(env.weatherLayers)) gather(name, layers)
-  if (creature) {
-    for (const [name, layers] of Object.entries(
-      fieldLayersForCreature(creature, mapMemory.value)
-    )) {
-      gather(name, layers)
-    }
+  const weatherClimateLayers = attackerWeatherClimateLayers(creature)
+  for (const weather of WeatherStates) {
+    gather(weather.name, weatherClimateLayers[weather.name] ?? 0)
+  }
+  for (const climate of ClimateStates) {
+    gather(climate.name, fieldClimateEffective(climate.name, weatherClimateLayers))
   }
 
-  const windLayers = env.getClimateEffective('起风')
+  const fieldLayers = activeFieldLayers(creature)
+  for (const [name, layers] of Object.entries(fieldLayers)) gather(name, layers)
+
+  const windLayers = fieldClimateEffective('起风', weatherClimateLayers)
   if (windLayers >= 10) {
     res.push(
-      new MovePower(res.length, 5 * windLayers, '飞行', '物理', '钝击', true, '（起风 ≥10 层）')
+      new MovePower(
+        res.length,
+        5 * windLayers,
+        '飞行',
+        '物理',
+        '钝击',
+        true,
+        `（起风 ${windLayers}层）`
+      )
     )
   }
 
@@ -1419,7 +1660,7 @@ export function healShieldMessage(): string {
       '\n' +
       hist +
       '\n' +
-      `${df}获得了 ${heal} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [0, heal]))}）。`
+      `${df}获得了 ${heal} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [0, heal], 1, battleMemoryHeal.value.stackShield))}）。`
     )
   }
   return ''
@@ -1497,7 +1738,7 @@ export function healShieldStatusMessage(): string {
         : '') +
       hist +
       '\n' +
-      `${df}获得了 ${heal} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [0, heal]))}）。`
+      `${df}获得了 ${heal} 护盾（HP ${showHP(hp)} -> ${showHP(handleHP(hp, battleMemory.value.defender.maxHP(), [0, heal], 1, battleMemoryStatus.value.stackShield))}）。`
     )
   }
   return ''
@@ -1572,7 +1813,7 @@ export function applyHealShieldResult(): void {
   }
   navigator.clipboard.writeText(healShieldMessage())
   battleMemory.value.attacker.takePP(-battleMemoryHeal.value.costPP)
-  battleMemory.value.defender.takeHP([0, healShieldCalc()])
+  battleMemory.value.defender.takeHP([0, healShieldCalc()], 1, battleMemoryHeal.value.stackShield)
   battleMemoryHeal.value.costPP = 0
   moveUseCharge()
 }
@@ -1614,7 +1855,7 @@ export function applyHealShieldStatusResult(): void {
   if (battleMemory.value.attacker != null) {
     battleMemory.value.attacker.takePP(-battleMemoryStatus.value.costPP)
   }
-  battleMemory.value.defender.takeHP([0, statusCalc(true)])
+  battleMemory.value.defender.takeHP([0, statusCalc(true)], 1, battleMemoryStatus.value.stackShield)
   moveUseCharge()
 }
 
@@ -1632,6 +1873,8 @@ export function getAttackAdvantage(mod: string): number {
 export class MoveMemory {
   selectedMove: string
   selectedPowerIdx: number
+  targetCodes: string[]
+  dmControlRoll: boolean
 
   nullCostPP: number
   dcDelta: number
@@ -1641,6 +1884,8 @@ export class MoveMemory {
   constructor() {
     this.selectedMove = ''
     this.selectedPowerIdx = 0
+    this.targetCodes = []
+    this.dmControlRoll = false
     this.nullCostPP = 0
     this.dcDelta = 0
     this.lastMoveName = ''

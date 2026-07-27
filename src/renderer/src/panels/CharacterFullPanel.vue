@@ -6,6 +6,8 @@ import {
   Feature,
   Equipment,
   Item,
+  Race,
+  Attribute,
   sizeString,
   tagList
 } from '@renderer/model/DataType'
@@ -13,15 +15,14 @@ import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { ref, watch, computed, nextTick } from 'vue'
 import {
   CharacterMemory,
+  environmentStatusEntriesForCreature,
   mapMemory,
   toolsMemory,
   ToolsMemory,
-  weatherStatusEntries,
   type MapAsset
 } from '@renderer/model/GlobalMemory'
 import Creatures, { type Creature } from '@renderer/model/Creature'
 import { valueToColorBinary } from '@renderer/utils'
-import { fieldRemainingText, fieldStatusesForCreature } from '@renderer/model/MapFields'
 
 type CharacterPanelParams = {
   code?: string
@@ -43,6 +44,13 @@ const memory = ref<CharacterMemory>(new CharacterMemory())
 const toolsMem = ref<ToolsMemory>(toolsMemory.value)
 const mm = mapMemory.value
 const tokenCanvas = ref<HTMLCanvasElement | null>(null)
+const temporaryRaceName = ref('')
+const temporaryRaceLevel = ref(1)
+const temporaryRaceBattleScale = ref(1)
+const temporaryRaceCastScale = ref(1)
+const temporaryRaceAttributes = ref('100/100/100/100/100/100/0')
+const temporaryRaceCantrips = ref(0)
+const temporaryRaceError = ref('')
 
 const creatureCode = computed(() => props.params?.params?.code ?? props.params?.code ?? '')
 const currentCode = computed(() => memory.value.cur?.code() ?? creatureCode.value)
@@ -79,17 +87,10 @@ const overviewFeatureList = computed(() => {
 const overviewStatusList = computed<OverviewStatusItem[]>(() => {
   const cur = memory.value.cur
   if (!cur) return []
-  const weatherStatuses = weatherStatusEntries().map((entry) => ({
-    key: `weather-${entry.typeLabel}-${entry.statusName}`,
+  const environmentStatuses = environmentStatusEntriesForCreature(cur).map((entry) => ({
+    key: `environment-${entry.typeLabel}-${entry.stateName}`,
     name: entry.statusName,
     detail: `${entry.typeLabel} / ${entry.layers} 层${entry.details ? ` / ${entry.details}` : ''}`
-  }))
-  const fieldStatuses = fieldStatusesForCreature(cur, mapMemory.value).map((entry) => ({
-    key: `field-${entry.stateName}`,
-    name: entry.statusName,
-    detail: `场地 / ${entry.layers} 层 / ${entry.sourceCount} 个区域 / 剩余 ${entry.remainingRounds
-      .map(fieldRemainingText)
-      .join(' / ')}`
   }))
   const creatureStatuses = cur.status.status
     .filter((status) => status.stack > 0)
@@ -100,7 +101,7 @@ const overviewStatusList = computed<OverviewStatusItem[]>(() => {
         status.type || status.name == '刚毅' ? '层' : '回合'
       }`
     }))
-  return [...weatherStatuses, ...fieldStatuses, ...creatureStatuses]
+  return [...environmentStatuses, ...creatureStatuses]
 })
 
 watch(
@@ -282,9 +283,88 @@ function raceTypeCount(type: string): number {
 function castLvFrom(type: string): number {
   return (
     memory.value.cur?.races.reduce((total, race) => {
-      return race.type == type ? total + race.castLv() : total
+      return race.type == type && (type != '种族' || race.enabled) ? total + race.castLv() : total
     }, 0) ?? 0
   )
+}
+
+function enableRace(race: Race, event: Event): void {
+  const cur = memory.value.cur
+  if (!cur) return
+  const input = event.target as HTMLInputElement
+  if (!input.checked) {
+    input.checked = true
+    return
+  }
+  cur.races
+    .filter((entry) => entry.type == '种族')
+    .forEach((entry) => (entry.enabled = entry === race))
+  cur.shallowRefresh()
+}
+
+function addTemporaryRace(): void {
+  const cur = memory.value.cur
+  if (!cur) return
+  const name = temporaryRaceName.value.trim()
+  if (!name) {
+    temporaryRaceError.value = '请输入临时种族名。'
+    return
+  }
+  if (cur.races.some((race) => race.type == '种族' && race.name.trim() == name)) {
+    temporaryRaceError.value = '种族名不能与已有种族重复。'
+    return
+  }
+  const values = temporaryRaceAttributes.value.split(/[\/／]/).map((value) => Number(value.trim()))
+  if (
+    values.length != 7 ||
+    values.some((value) => !Number.isFinite(value)) ||
+    values.slice(0, 6).some((value) => value <= 0) ||
+    values[6] < 0
+  ) {
+    temporaryRaceError.value =
+      '种族值格式应为 HP/物攻/物防/特攻/特防/速度/PP；前六项须大于 0，PP 不得小于 0。'
+    return
+  }
+  const numericFields = [
+    temporaryRaceLevel.value,
+    temporaryRaceBattleScale.value,
+    temporaryRaceCastScale.value,
+    temporaryRaceCantrips.value
+  ]
+  if (numericFields.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    temporaryRaceError.value = '等级、倍率和戏法位必须是非负数字。'
+    return
+  }
+  cur.races.filter((race) => race.type == '种族').forEach((race) => (race.enabled = false))
+  const race = new Race(
+    '种族',
+    name,
+    Number(temporaryRaceLevel.value),
+    Number(temporaryRaceBattleScale.value),
+    Number(temporaryRaceCastScale.value),
+    new Attribute(...(values as [number, number, number, number, number, number, number])),
+    Number(temporaryRaceCantrips.value)
+  )
+  race.temporary = true
+  race.enabled = true
+  cur.races.push(race)
+  cur.shallowRefresh()
+  temporaryRaceName.value = ''
+  temporaryRaceError.value = ''
+}
+
+function removeTemporaryRace(race: Race): void {
+  const cur = memory.value.cur
+  if (!cur || !race.temporary) return
+  const index = cur.races.indexOf(race)
+  if (index < 0) return
+  const wasEnabled = race.enabled
+  cur.races.splice(index, 1)
+  if (wasEnabled) {
+    const fallback = cur.races.find((entry) => entry.type == '种族')
+    if (fallback) fallback.enabled = true
+  }
+  cur.shallowRefresh()
 }
 
 function sameAssetCode(a: string | undefined, b: string): boolean {
@@ -478,10 +558,9 @@ if (memory.value.cur != null) {
               <div
                 class="resource-fill hp"
                 :style="{
-                    width:
-                      Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
-                  }"
-                ></div>
+                  width: Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
+                }"
+              ></div>
               <div class="resource-content resource-content-split">
                 <div class="resource-main">
                   <span class="resource-label">HP</span>
@@ -528,6 +607,13 @@ if (memory.value.cur != null) {
                 <span>/ {{ memory.cur.maxPP() }}</span>
               </div>
             </div>
+            <label
+              class="resource-card concentration-card"
+              :class="{ active: memory.cur.concentrating }"
+            >
+              <input v-model="memory.cur.concentrating" type="checkbox" />
+              <span>{{ memory.cur.concentrating ? '正在专注' : '未专注' }}</span>
+            </label>
           </div>
         </section>
         <div v-if="isOverviewPage" class="character-overview">
@@ -573,8 +659,7 @@ if (memory.value.cur != null) {
                 <div
                   class="resource-fill hp"
                   :style="{
-                    width:
-                      Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
+                    width: Math.max(Math.min(100, 100 * memory.cur.hpRatio()), 0) + '%'
                   }"
                 ></div>
                 <div class="resource-content resource-content-split">
@@ -625,6 +710,13 @@ if (memory.value.cur != null) {
                   <span>/ {{ memory.cur.maxPP() }}</span>
                 </div>
               </div>
+              <label
+                class="resource-card concentration-card overview-resource-card"
+                :class="{ active: memory.cur.concentrating }"
+              >
+                <input v-model="memory.cur.concentrating" type="checkbox" />
+                <span>{{ memory.cur.concentrating ? '正在专注' : '未专注' }}</span>
+              </label>
             </div>
 
             <section class="overview-card overview-scroll-card overview-status-card-inline">
@@ -2768,7 +2860,66 @@ if (memory.value.cur != null) {
               </span>
             </summary>
             <div class="section-body">
-              <table class="w3-table-all w3-centered dense-table">
+              <div class="temporary-race-form">
+                <input
+                  v-model="temporaryRaceName"
+                  class="w3-input w3-border temporary-race-name"
+                  placeholder="临时种族名（如 Mega、变形形态）"
+                />
+                <label>
+                  等级
+                  <input
+                    v-model.number="temporaryRaceLevel"
+                    class="w3-input w3-border"
+                    type="number"
+                    min="0"
+                  />
+                </label>
+                <label>
+                  战斗倍率
+                  <input
+                    v-model.number="temporaryRaceBattleScale"
+                    class="w3-input w3-border"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                  />
+                </label>
+                <label>
+                  施法倍率
+                  <input
+                    v-model.number="temporaryRaceCastScale"
+                    class="w3-input w3-border"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                  />
+                </label>
+                <label class="temporary-race-stats">
+                  种族值（HP/物攻/物防/特攻/特防/速度/PP）
+                  <input v-model="temporaryRaceAttributes" class="w3-input w3-border" />
+                </label>
+                <label>
+                  戏法位
+                  <input
+                    v-model.number="temporaryRaceCantrips"
+                    class="w3-input w3-border"
+                    type="number"
+                    min="0"
+                  />
+                </label>
+                <button
+                  class="w3-button w3-blue temporary-race-submit"
+                  type="button"
+                  @click="addTemporaryRace"
+                >
+                  增加并启用临时种族
+                </button>
+              </div>
+              <div v-if="temporaryRaceError" class="temporary-race-error">
+                {{ temporaryRaceError }}
+              </div>
+              <table class="w3-table-all w3-centered dense-table race-career-table">
                 <thead>
                   <tr>
                     <th>种族名</th>
@@ -2787,7 +2938,27 @@ if (memory.value.cur != null) {
                     v-for="value in memory.cur.races.filter((s) => s.type == '种族')"
                     :key="value.name"
                   >
-                    <td>{{ value.name }}</td>
+                    <td>
+                      <div class="race-name-cell">
+                        <label class="race-enable-control" title="种族同时只能启用一个">
+                          <input
+                            type="checkbox"
+                            :checked="value.enabled"
+                            @change="enableRace(value, $event)"
+                          />
+                          <span>{{ value.name }}</span>
+                        </label>
+                        <button
+                          v-if="value.temporary"
+                          class="temporary-race-delete"
+                          type="button"
+                          title="删除临时种族"
+                          @click="removeTemporaryRace(value)"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
                     <td>
                       <vue-number-input
                         v-model="value.lv"
@@ -2835,7 +3006,7 @@ if (memory.value.cur != null) {
               </span>
             </summary>
             <div class="section-body">
-              <table class="w3-table-all w3-centered dense-table">
+              <table class="w3-table-all w3-centered dense-table race-career-table">
                 <thead>
                   <tr>
                     <th>职业名</th>
@@ -3389,7 +3560,7 @@ if (memory.value.cur != null) {
 
 .overview-resource-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
   gap: 0.55em;
 }
 
@@ -3585,7 +3756,7 @@ if (memory.value.cur != null) {
 
 .resource-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
   gap: 0.5em;
   align-items: stretch;
 }
@@ -3617,6 +3788,131 @@ if (memory.value.cur != null) {
 
 .pp-card {
   min-width: max-content;
+}
+
+.temporary-race-form {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  grid-template-columns:
+    minmax(0, 1.5fr) repeat(3, minmax(0, 0.7fr)) minmax(0, 2fr) minmax(0, 0.65fr)
+    minmax(0, 1.15fr);
+  align-items: end;
+  gap: 0.5em;
+  margin-bottom: 0.55em;
+  box-sizing: border-box;
+}
+
+.temporary-race-form > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.temporary-race-form label {
+  min-width: 0;
+  color: #555;
+  font-size: 12px;
+  text-align: left;
+}
+
+.temporary-race-form input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.temporary-race-stats {
+  grid-column: auto;
+}
+
+.temporary-race-submit {
+  min-width: 0;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.temporary-race-error {
+  margin-bottom: 0.55em;
+  color: crimson;
+}
+
+.race-career-table {
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed;
+  box-sizing: border-box;
+  white-space: normal !important;
+}
+
+.race-career-table :is(th, td) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.race-career-table :deep(.vue-number-input) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.race-name-cell {
+  display: flex;
+  min-width: 8.5em;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+}
+
+.race-enable-control {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.race-enable-control input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.temporary-race-delete {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid #e57373;
+  border-radius: 3px;
+  background: #ffebee;
+  color: #b71c1c;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.temporary-race-delete:hover {
+  border-color: #c62828;
+  background: #ffcdd2;
+}
+
+.concentration-card {
+  display: flex;
+  min-width: 7.5em;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  padding: 0 0.65em;
+  background: #f1f1f1;
+  color: #6b7280;
+  font-weight: 650;
+  cursor: pointer;
+  user-select: none;
+}
+
+.concentration-card.active {
+  border-color: #d6aa23;
+  background: #fff3cd;
+  color: #725800;
+}
+
+.concentration-card input {
+  margin: 0;
 }
 
 .resource-fill {
@@ -3770,6 +4066,17 @@ if (memory.value.cur != null) {
   }
 }
 
+@container (max-width: 960px) {
+  .temporary-race-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .temporary-race-name,
+  .temporary-race-stats {
+    grid-column: span 2;
+  }
+}
+
 @container (max-width: 720px) {
   .character-overview {
     grid-template-columns: 1fr;
@@ -3815,6 +4122,16 @@ if (memory.value.cur != null) {
 }
 
 @container (max-width: 620px) {
+  .temporary-race-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .temporary-race-name,
+  .temporary-race-stats,
+  .temporary-race-submit {
+    grid-column: 1 / -1;
+  }
+
   .overview-stat-grid.five-cols {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }

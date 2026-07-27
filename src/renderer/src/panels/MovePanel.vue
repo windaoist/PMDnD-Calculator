@@ -570,15 +570,19 @@ onUpdated(() => {
                   }}
                   <span
                     v-if="
-                      envTypeMdfTotal([memory.damageType, memory.damageAspect], memory.attacker) !=
-                      0
+                      envTypeMdfTotal(
+                        [memory.damageType, memory.damageAspect],
+                        memory.attacker,
+                        memory.defender
+                      ) != 0
                     "
                   >
-                    + 天气场地
+                    + 环境
                     {{
                       envTypeMdfTotal(
                         [memory.damageType, memory.damageAspect],
-                        memory.attacker
+                        memory.attacker,
+                        memory.defender
                       ).toFixed(1)
                     }}
                   </span>
@@ -855,7 +859,9 @@ onUpdated(() => {
                     <button class="w3-button w3-center" @click="copyHealShieldMessageToClipboard">
                       复制到剪贴板
                     </button>
-                    护盾的来源只能有一个
+                    <label>
+                      <input v-model="memoryHeal.stackShield" type="checkbox" /> 护盾叠加
+                    </label>
                     <button
                       class="w3-button w3-center w3-red w3-right"
                       @click="applyHealShieldResult"
@@ -896,15 +902,17 @@ onUpdated(() => {
                     v-if="
                       envTypeMdfTotal(
                         [memoryStatus.damageType, memoryStatus.damageAspect],
-                        memory.attacker
+                        memory.attacker,
+                        memory.defender
                       ) != 0
                     "
                   >
-                    + 天气场地
+                    + 环境
                     {{
                       envTypeMdfTotal(
                         [memoryStatus.damageType, memoryStatus.damageAspect],
-                        memory.attacker
+                        memory.attacker,
+                        memory.defender
                       ).toFixed(1)
                     }}
                   </span>
@@ -1045,6 +1053,9 @@ onUpdated(() => {
                     >
                       复制到剪贴板
                     </button>
+                    <label>
+                      <input v-model="memoryStatus.stackShield" type="checkbox" /> 护盾叠加
+                    </label>
                     <button
                       class="w3-button w3-center w3-red w3-right"
                       @click="applyHealShieldStatusResult"

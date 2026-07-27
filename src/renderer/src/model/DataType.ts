@@ -263,6 +263,8 @@ export class Race {
   castScale: number
   attribute: Attribute
   cantripCount: number
+  enabled: boolean
+  temporary: boolean
   constructor(
     type: string,
     name: string,
@@ -279,6 +281,8 @@ export class Race {
     this.castScale = castScale
     this.attribute = attribute
     this.cantripCount = cantripCount
+    this.enabled = true
+    this.temporary = false
     this.validate()
   }
 
@@ -302,6 +306,8 @@ export class Race {
   }
 
   validate(): void {
+    this.enabled = this.enabled === undefined ? true : Boolean(this.enabled)
+    this.temporary = Boolean(this.temporary)
     this.lv = Number(this.lv) || 0
     this.battleScale = Number(this.battleScale) || 0
     this.castScale = Number(this.castScale) || 0

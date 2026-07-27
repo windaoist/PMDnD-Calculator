@@ -7,7 +7,6 @@ import {
   makeUniqueAssetKey,
   normalizeMapAssets,
   saveCurrentBackgroundSettingsToAsset,
-  syncTokenImagesFromAssets,
   upsertMapAsset
 } from '@renderer/model/MapAssets'
 
@@ -56,15 +55,12 @@ function deleteAsset(asset: MapAsset): void {
   mm.assets = mm.assets.filter((item) => item.key != asset.key)
   if (mm.currentBackgroundKey == asset.key) {
     mm.currentBackgroundKey = ''
-    mm.bgDataUrl = ''
   }
-  syncTokenImagesFromAssets(mm)
   selectedKey.value = mm.assets[0]?.key ?? ''
 }
 
 function setUsage(asset: MapAsset, usage: MapAssetUsage): void {
   asset.usage = usage
-  syncTokenImagesFromAssets(mm)
 }
 
 function renameAsset(asset: MapAsset, rawKey: string): void {
@@ -83,12 +79,10 @@ function renameAsset(asset: MapAsset, rawKey: string): void {
   asset.key = nextKey
   if (mm.currentBackgroundKey == oldKey) mm.currentBackgroundKey = nextKey
   selectedKey.value = nextKey
-  syncTokenImagesFromAssets(mm)
 }
 
 function applyBackground(asset: MapAsset): void {
   applyAssetAsBackground(mm, asset)
-  syncTokenImagesFromAssets(mm)
   selectedKey.value = asset.key
 }
 

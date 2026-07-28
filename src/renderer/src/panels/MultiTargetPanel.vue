@@ -106,7 +106,7 @@ function hasPowerSelection(): boolean {
     return true
   }
   const power = currentPower()
-  return power != null && !isNoPowerPlaceholder(power)
+  return power != null
 }
 
 function currentMoveRangeText(): string {

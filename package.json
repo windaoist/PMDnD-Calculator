@@ -1,5 +1,5 @@
 {
-  "name": "pmdnd-calculator-dev",
+  "name": "pmdnd-calculator",
   "version": "3.0.0",
   "description": "PMDnD计算器",
   "main": "./out/main/index.js",

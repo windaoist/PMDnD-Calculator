@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import pkg from '../../../../package.json'
 
-const repositoryUrl = 'https://github.com/KatedaEoS/pmdnd-kate-3'
+const repositoryUrl = 'https://github.com/windaoist/PMDnD-Calculator'
 const licenseUrl = `${repositoryUrl}/blob/main/LICENSE`
 </script>
 

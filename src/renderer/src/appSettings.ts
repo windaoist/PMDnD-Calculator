@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 
-const APP_SETTINGS_KEY = 'pmdnd-kate-app-settings-v1'
+const APP_SETTINGS_KEY = 'pmdnd-calculator-app-settings-v1'
 const APP_SETTINGS_VERSION = 3
 const DEFAULT_UI_SCALE = 1
 const DEFAULT_RENDER_SCALE = 2

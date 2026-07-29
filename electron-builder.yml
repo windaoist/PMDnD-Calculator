@@ -17,8 +17,8 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: pmdnd-calculator-dev
-  icon: build/icons/win/icon.ico
+  executableName: pmdnd-calculator
+  icon: resources/icon.png
   target: ['portable', 'nsis']
 nsis:
   artifactName: ${name}-${version}.${ext}
@@ -27,7 +27,6 @@ nsis:
   createDesktopShortcut: false
 portable:
   artifactName: ${productName}_${version}.${ext}
-  # splashImage: build/pmdnd-splash.bmp
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -36,7 +35,7 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
-  icon: build/icons/mac/icon.icns
+  icon: resources\icon.png
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:

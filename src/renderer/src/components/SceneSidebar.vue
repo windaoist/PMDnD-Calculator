@@ -92,7 +92,7 @@ function groupIsActive(group: SidebarGroup): boolean {
   <aside class="scene-sidebar" :class="{ 'scene-sidebar--collapsed': !expanded }">
     <div class="sidebar-header">
       <div v-if="expanded" class="sidebar-brand">
-        <span class="sidebar-brand-mark">K</span>
+        <span class="sidebar-brand-mark">P</span>
         <span class="sidebar-brand-copy">
           <strong>PMDnD计算器</strong>
           <small>DM 控制台</small>

@@ -179,7 +179,7 @@ body {
 
 .panel-field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   gap: 0.55em 0.8em;
   align-items: start;
 }

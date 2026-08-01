@@ -431,7 +431,7 @@ export class Creature {
     const mod2: number =
       this.attributeChange.get(index) +
       this.attributeDChange.get(index) +
-      this.status.grandStatus().attributeMdf.get(index)
+      this.grandStatus().attributeMdf.get(index)
 
     if (index > 0 && index < 6) {
       if (mod1 >= 0) {
@@ -460,7 +460,7 @@ export class Creature {
     return (
       this.abilityRaw(index) +
       this.abilityBaseD.get(index) +
-      this.status.grandStatus().abilityMdf.get(index)
+      this.grandStatus().abilityMdf.get(index)
     )
   }
 
@@ -505,7 +505,7 @@ export class Creature {
       this.battleAbilityDEquip.get(index) +
       this.battleAbilityDState.get(index) +
       this.battleAbilityDChange.get(index) +
-      this.status.grandStatus().battleAbilityMdf.get(index)
+      this.grandStatus().battleAbilityMdf.get(index)
     )
   }
 
@@ -544,7 +544,7 @@ export class Creature {
     return Math.floor(
       this.effectPowerRaw() +
         this.getBattleAbilityD(3) +
-        this.status.grandStatus().battleAbilityMdf.get(3)
+        this.grandStatus().battleAbilityMdf.get(3)
     )
   }
 
@@ -622,12 +622,12 @@ export class Creature {
       this.typeMdfEquip.get(index) +
       this.typeMdfState.get(index) +
       this.typeMdfChange.get(index) +
-      this.status.grandStatus().typeMdf.get(index)
+      this.grandStatus().typeMdf.get(index)
     )
   }
 
   grandTypeMdf(): number {
-    return this.status.grandStatus().grandMdf
+    return this.grandStatus().grandMdf
   }
 
   maxHP(equip: boolean = true): number {
@@ -805,7 +805,7 @@ export class Creature {
   }
 
   skillCheckAdvanceStatus(skill: string): number {
-    const s = this.status.grandStatus().abilityCheckMdf
+    const s = this.grandStatus().abilityCheckMdf
     const i = skillToModIndex(skill)
     if (i < 0) {
       return 0
@@ -814,7 +814,7 @@ export class Creature {
   }
 
   skillSaveAdvanceStatus(skill: string): number {
-    const s = this.status.grandStatus().abilitySaveMdf
+    const s = this.grandStatus().abilitySaveMdf
     const i = skillToModIndex(skill)
     if (i < 0) {
       return 0

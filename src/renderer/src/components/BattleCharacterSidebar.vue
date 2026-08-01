@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, type PropType } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type PropType } from 'vue'
 import { showHP } from '@renderer/model/Damage'
 import Creatures, { Creature } from '@renderer/model/Creature'
 
 const DM_CODE = 'DM'
 const thisCreatures = ref<Creature[]>(Creatures.value)
 const isCollapsed = ref(false)
+const sidebarRef = ref<HTMLElement | null>(null)
+const narrowParent = ref(false)
+let parentResizeObserver: ResizeObserver | null = null
 
 const props = defineProps({
   onChange: {
@@ -30,7 +33,7 @@ const props = defineProps({
   }
 })
 
-const compact = computed(() => props.collapsible && isCollapsed.value)
+const compact = computed(() => props.collapsible && (isCollapsed.value || narrowParent.value))
 const selectedCodeSet = computed(() => new Set(props.selectedCodes))
 
 function isSelected(code: string): boolean {
@@ -48,6 +51,19 @@ function creatureInitial(creature: Creature): string {
 function creatureTitle(creature: Creature): string {
   return `${creature.name()} (${creature.code()})`
 }
+
+onMounted(() => {
+  const parent = sidebarRef.value?.parentElement
+  if (!parent) return
+  const updateNarrowState = (): void => {
+    narrowParent.value = parent.clientWidth < 480
+  }
+  parentResizeObserver = new ResizeObserver(updateNarrowState)
+  parentResizeObserver.observe(parent)
+  updateNarrowState()
+})
+
+onBeforeUnmount(() => parentResizeObserver?.disconnect())
 </script>
 
 <template>
@@ -108,7 +124,7 @@ function creatureTitle(creature: Creature): string {
     </div>
   </div>
 
-  <aside v-else class="battle-character-sidebar" :class="{ compact }">
+  <aside v-else ref="sidebarRef" class="battle-character-sidebar" :class="{ compact }">
     <div v-if="props.collapsible" class="sidebar-header">
       <button
         class="sidebar-toggle"

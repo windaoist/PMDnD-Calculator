@@ -101,6 +101,7 @@ function updateRenderScale(event: Event): void {
   background: #fff;
   color: #262626;
   font-size: 14px;
+  container-type: inline-size;
 }
 
 .settings-section {
@@ -193,7 +194,7 @@ function updateRenderScale(event: Event): void {
   color: #8d241c;
 }
 
-@media (max-width: 420px) {
+@container (max-width: 420px) {
   .setting-row {
     grid-template-columns: 1fr;
     gap: 6px;

@@ -493,6 +493,10 @@ function applyPaste(): void {
 </template>
 
 <style scoped>
+.panel-page {
+  container-type: inline-size;
+}
+
 .paste-input {
   flex: 1 1 220px;
   width: auto;
@@ -658,7 +662,7 @@ function applyPaste(): void {
   line-height: 1.8;
 }
 
-@media (max-width: 720px) {
+@container (max-width: 720px) {
   .self-adjustment-controls {
     grid-template-columns: 1fr 1fr;
   }
@@ -668,7 +672,7 @@ function applyPaste(): void {
   }
 }
 
-@media (max-width: 480px) {
+@container (max-width: 480px) {
   .self-adjustment-header {
     align-items: stretch;
     flex-direction: column;

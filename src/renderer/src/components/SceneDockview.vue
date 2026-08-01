@@ -97,6 +97,8 @@ const dockviewComponents = {
   width: 100%;
   height: 100%;
   font-size: 14px;
+  --dv-active-sash-color: #4c9ffe;
+  --dv-active-sash-transition-delay: 0s;
 }
 
 .dockview-overlay :deep(.dv-shell),
@@ -117,8 +119,17 @@ const dockviewComponents = {
 }
 
 .dockview-overlay :deep(.dv-resize-container),
-.dockview-overlay :deep(.dv-groupview-floating) {
+.dockview-overlay :deep(.dv-groupview-floating),
+.dockview-overlay :deep(.dv-sash) {
   pointer-events: auto;
+}
+
+.dockview-overlay :deep(.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash) {
+  width: 8px;
+}
+
+.dockview-overlay :deep(.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash) {
+  height: 8px;
 }
 
 .dockview-overlay :deep(.dv-groupview),

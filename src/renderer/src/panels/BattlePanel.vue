@@ -258,7 +258,7 @@ onUpdated(() => {
 
 <template>
   <div class="battle-panel">
-    <BattleCharacterSidebar :on-change="onChangeSelectedCreature" />
+    <BattleCharacterSidebar collapsible :on-change="onChangeSelectedCreature" />
     <div class="battle-panel-main">
       <div style="background-color: white; position: sticky; top: 0; z-index: 10">
         <div class="w3-bar">

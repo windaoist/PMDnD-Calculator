@@ -24,6 +24,8 @@ const rollModeOptions: { value: RollMode; label: string }[] = [
 
 const thisCreatures = ref<Creature[]>(Creatures.value)
 const memory = ref<SurviveMemory>(surviveMemory.value)
+const initiativeCodes = ref<string[]>([])
+const initiativeCopyState = ref<'idle' | 'copied' | 'failed'>('idle')
 
 if (!memory.value.rollMode) {
   memory.value.rollMode = memory.value.isSave ? 'save' : 'check'
@@ -48,6 +50,23 @@ const selectedSummary = computed<string>(() => {
 })
 const defaultAbilityLabel = computed<string>(() => defaultAbilityName(memory.value.checkSkill))
 const checkActionLabel = computed<string>(() => (memory.value.rollMode == 'save' ? '豁免' : '检定'))
+const selectedCreatureCodes = computed<string[]>(() =>
+  selectedCodes.value.filter((code) => code != DM_CODE && creatureByCode(code) != null)
+)
+const initiativeActors = computed<Creature[]>(() =>
+  initiativeCodes.value
+    .map((code) => creatureByCode(code))
+    .filter((creature): creature is Creature => creature != null)
+)
+const initiativeText = computed<string>(() =>
+  initiativeActors.value
+    .map((creature) => {
+      const base = creature.initiative()
+      const roll = creature.tempInitiative
+      return `${creature.name()} (${creature.code()}) 的先攻：${base} + d10(${roll}) = ${base + roll}`
+    })
+    .join('\n')
+)
 
 function creatureByCode(code: string): Creature | undefined {
   return creatureByCodeMap.value.get(code)
@@ -137,23 +156,39 @@ function appendLog(text: string): void {
   memory.value.logs += text.endsWith('\n') ? text : `${text}\n`
 }
 
+async function copyInitiativeResults(): Promise<void> {
+  if (!initiativeText.value) return
+  try {
+    await navigator.clipboard.writeText(initiativeText.value)
+    initiativeCopyState.value = 'copied'
+  } catch {
+    initiativeCopyState.value = 'failed'
+  }
+}
+
+async function makeInitiative(): Promise<void> {
+  initiativeCodes.value = [...selectedCreatureCodes.value]
+  initiativeCopyState.value = 'idle'
+  if (initiativeCodes.value.length == 0) {
+    appendLog(memory.value.chosen.has(DM_CODE) ? 'DM 不参与先攻。' : '没有选定角色。')
+    await scrollLogToBottom()
+    return
+  }
+
+  for (const creature of initiativeActors.value) {
+    creature.tempInitiative = d10()
+  }
+  appendLog(initiativeText.value)
+  await copyInitiativeResults()
+  await scrollLogToBottom()
+}
+
 async function scrollLogToBottom(): Promise<void> {
   const textarea = document.getElementById('survive-logs')
   if (textarea instanceof HTMLTextAreaElement) {
     await nextTick()
     textarea.scrollTop = textarea.scrollHeight
     textarea.focus()
-  }
-}
-
-function makeInitiative(): void {
-  for (let c of thisCreatures.value) {
-    c.tempInitiative = d10()
-  }
-  for (let c of thisCreatures.value) {
-    appendLog(
-      `${c.name()} (${c.code()}) 的先攻：${c.initiative()} + ${c.tempInitiative} = ${c.initiative() + c.tempInitiative}`
-    )
   }
 }
 
@@ -447,10 +482,62 @@ for (const c of thisCreatures.value) {
                 {{ option.label }}
               </button>
             </div>
+            <button
+              class="w3-button initiative-mode-action"
+              type="button"
+              :disabled="selectedCreatureCodes.length == 0"
+              title="为当前选中的角色生成先攻并加入先攻排序"
+              @click="makeInitiative"
+            >
+              生成先攻
+            </button>
             <span class="selected-count">已选 {{ selectedCodes.length }}</span>
           </div>
           <div class="selected-summary">
             {{ selectedSummary }}
+          </div>
+
+          <div v-if="initiativeActors.length > 0" class="initiative-editor">
+            <div class="initiative-editor-header">
+              <strong>先攻调整</strong>
+              <span>修改骰值后可重新复制</span>
+              <button
+                class="w3-button"
+                type="button"
+                :class="{ 'w3-green': initiativeCopyState == 'copied' }"
+                @click="copyInitiativeResults"
+              >
+                {{ initiativeCopyState == 'copied' ? '结果已复制' : '复制先攻' }}
+              </button>
+            </div>
+            <div class="initiative-editor-list">
+              <div
+                v-for="creature in initiativeActors"
+                :key="creature.code()"
+                class="initiative-editor-row"
+              >
+                <span class="initiative-actor-name">
+                  {{ creature.name() }} <small>{{ creature.code() }}</small>
+                </span>
+                <span>基础 {{ creature.initiative() }}</span>
+                <span>+</span>
+                <vue-number-input
+                  v-model="creature.tempInitiative"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :min="1"
+                  :max="10"
+                  :step="1"
+                  @change="initiativeCopyState = 'idle'"
+                />
+                <strong>= {{ creature.initiative() + creature.tempInitiative }}</strong>
+              </div>
+            </div>
+            <div v-if="initiativeCopyState == 'failed'" class="initiative-copy-warning">
+              自动复制失败，请调整后点击“复制先攻”重试。
+            </div>
           </div>
 
           <div v-if="memory.rollMode == 'dice'" class="dice-controls">
@@ -564,7 +651,6 @@ for (const c of thisCreatures.value) {
           >
             {{ memory.chooseMode ? '单选模式' : '多选模式' }}
           </button>
-          <button class="w3-button" type="button" @click="makeInitiative">生成先攻</button>
           <button class="w3-button" type="button" @click="selectFactions(['玩家'])">
             全选玩家
           </button>
@@ -603,6 +689,7 @@ for (const c of thisCreatures.value) {
   min-height: 0;
   display: flex;
   background: #f7f7f5;
+  container-type: inline-size;
 }
 
 .survive-content {
@@ -664,6 +751,22 @@ for (const c of thisCreatures.value) {
   color: #fff;
 }
 
+.initiative-mode-action {
+  min-height: 32px;
+  padding: 5px 14px;
+  border: 1px solid #b8c6d8;
+  border-radius: 5px;
+  background: #e8f0fe;
+  color: #1f4f8a;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.initiative-mode-action:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .selected-count {
   flex-shrink: 0;
   margin-left: auto;
@@ -680,6 +783,73 @@ for (const c of thisCreatures.value) {
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.initiative-editor {
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid #d7dee8;
+  border-radius: 5px;
+  background: #f8fbff;
+}
+
+.initiative-editor-header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #d7dee8;
+}
+
+.initiative-editor-header > span {
+  color: #667085;
+  font-size: 11px;
+}
+
+.initiative-editor-header .w3-button {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.initiative-editor-list {
+  display: grid;
+}
+
+.initiative-editor-row {
+  display: grid;
+  grid-template-columns: minmax(9em, 1fr) auto auto minmax(8em, auto) minmax(4em, auto);
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.initiative-editor-row + .initiative-editor-row {
+  border-top: 1px solid #e5eaf0;
+}
+
+.initiative-actor-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.initiative-actor-name small {
+  color: #777;
+  font-weight: 400;
+}
+
+.initiative-copy-warning {
+  padding: 4px 8px;
+  border-top: 1px solid #efdca4;
+  background: #fff3cd;
+  color: #8a5a00;
+  font-size: 11px;
+  text-align: center;
 }
 
 .dice-controls,
@@ -787,7 +957,7 @@ for (const c of thisCreatures.value) {
   line-height: 1.45;
 }
 
-@media (max-width: 620px) {
+@container (max-width: 620px) {
   .mode-bar,
   .dice-controls {
     display: flex;

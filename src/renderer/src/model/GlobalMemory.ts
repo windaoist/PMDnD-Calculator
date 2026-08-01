@@ -31,6 +31,7 @@ export class StatusMemory {
   currentInitiativeIdx: number
   initiativeTransparent: boolean
   initiativeControlsExpanded: boolean
+  initiativeCardScale: number
 
   newStatus: Status
 
@@ -42,6 +43,7 @@ export class StatusMemory {
     this.currentInitiativeIdx = 0
     this.initiativeTransparent = false
     this.initiativeControlsExpanded = true
+    this.initiativeCardScale = 1
     this.newStatus = S_Null.duplicate()
   }
 }
@@ -240,6 +242,8 @@ export interface MapToken {
   x: number
   y: number
   color: string
+  /** Visual scale of the token artwork. Does not change its grid footprint. */
+  imageScale?: number
 }
 
 export type MapAssetUsage = 'unused' | 'token' | 'background' | 'both' | 'portrait'

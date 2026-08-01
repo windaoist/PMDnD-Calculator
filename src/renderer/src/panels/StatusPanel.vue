@@ -119,7 +119,7 @@ const statusDamageEntries = computed<StatusDamageEntry[]>(() => {
   const cr = cur.battleLv()
   const powers = [
     ...environmentDamageOnTurn(cur).map((p) => ({ p, source: 'environment' as const })),
-    ...cur.status
+    ...cur
       .grandStatus()
       .damageOnTurn.filter((p) => p.power > 0)
       .map((p) => ({ p, source: 'status' as const }))
@@ -276,23 +276,27 @@ function convertToParentStatus(s: Status): void {
   cur.shallowRefresh()
 }
 
+function updateStatusStack(): void {
+  memory.value.cur?.refreshGrandStatus()
+}
+
+function degradeStatus(name: string): void {
+  const cur = memory.value.cur
+  if (!cur) return
+  cur.status.degradeStatus(name)
+  cur.refreshGrandStatus()
+}
+
 memory.value.newStatus.lossOnTurn = 1
 
 if (memory.value.cur != null) {
   memory.value.cur.shallowRefresh()
 }
 
-let lastRefreshTick = 0
 onUpdated(() => {
   nextTick(() => {
     document.querySelectorAll<HTMLTextAreaElement>('textarea[data-autosize]').forEach(autoResize)
   })
-  const cur = memory.value.cur
-  const now = Date.now()
-  if (cur && now - lastRefreshTick > 50) {
-    lastRefreshTick = now
-    cur.shallowRefresh()
-  }
 })
 </script>
 
@@ -378,6 +382,7 @@ onUpdated(() => {
                       center
                       controls
                       :step="1"
+                      @update:model-value="updateStatusStack"
                     />
                     {{ s.type || s.name == '刚毅' ? '层' : '回合' }}
                   </td>
@@ -405,7 +410,7 @@ onUpdated(() => {
                     <button
                       v-if="s.childName.length > 0 && s.stack >= 1"
                       class="w3-button w3-red"
-                      @click="memory.cur.status.degradeStatus(s.name)"
+                      @click="degradeStatus(s.name)"
                     >
                       {{ 10 }} 层{{ s.childName }}
                     </button>
@@ -572,6 +577,7 @@ onUpdated(() => {
                       center
                       controls
                       :step="1"
+                      @update:model-value="updateStatusStack"
                     />
                   </td>
                   <td>

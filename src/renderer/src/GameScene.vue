@@ -101,6 +101,15 @@ const creatureByCode = computed(
   () => new Map(thisCreatures.value.map((creature) => [creature.code(), creature]))
 )
 const tokenByCode = computed(() => new Map(mm.tokens.map((token) => [token.code, token])))
+const minTokenImageScale = 0.25
+const maxTokenImageScale = 3
+const tokenImageScaleStep = 0.25
+
+function normalizedTokenImageScale(value: unknown): number {
+  if (value === undefined || value === null || value === '') return 1
+  const scale = Number(value)
+  return Number.isFinite(scale) ? clampNumber(scale, minTokenImageScale, maxTokenImageScale) : 1
+}
 const activeBackgroundAsset = computed(
   () => mm.assets.find((asset) => asset.key == mm.currentBackgroundKey) ?? null
 )
@@ -175,6 +184,8 @@ const ctxMenuActions = computed<ContextMenuAction[]>(() => {
   }
   if (!ctxMenuCode.value) return []
   const c = creatureByCode.value.get(ctxMenuCode.value)
+  const token = tokenByCode.value.get(ctxMenuCode.value)
+  const imageScale = normalizedTokenImageScale(token?.imageScale)
   const hpStr = c ? showHP([c.currentHP, c.tempHP]) : '?'
   return [
     { label: c ? c.name() : '???', action: '', disabled: true },
@@ -192,14 +203,38 @@ const ctxMenuActions = computed<ContextMenuAction[]>(() => {
     { label: '攻击/施法', action: 'battle' },
     { label: '状态管理', action: 'status' },
     { label: '', action: '', separator: true },
+    { label: `立绘大小：${Math.round(imageScale * 100)}%`, action: '', disabled: true },
+    {
+      label: '缩小立绘',
+      action: 'shrink-token-image',
+      disabled: imageScale <= minTokenImageScale
+    },
+    {
+      label: '放大立绘',
+      action: 'enlarge-token-image',
+      disabled: imageScale >= maxTokenImageScale
+    },
+    {
+      label: '重置立绘大小',
+      action: 'reset-token-image',
+      disabled: imageScale == 1
+    },
+    { label: '', action: '', separator: true },
     { label: '刷新移动力', action: 'refresh-mov' }
   ]
 })
 
 function handleContextMenu(action: string): void {
-  ctxMenuVisible.value = false
-  ctxMenuHighlight.value = null
-  draw()
+  const adjustsTokenImage = [
+    'shrink-token-image',
+    'enlarge-token-image',
+    'reset-token-image'
+  ].includes(action)
+  if (!adjustsTokenImage) {
+    ctxMenuVisible.value = false
+    ctxMenuHighlight.value = null
+    draw()
+  }
 
   if (ctxMenuTarget.value == 'fog') {
     if (action == 'delete-fog') {
@@ -290,6 +325,29 @@ function handleContextMenu(action: string): void {
 
   const c = creatureByCode.value.get(ctxMenuCode.value)
   if (!c) return
+
+  const token = tokenByCode.value.get(c.code())
+  if (token) {
+    const currentScale = normalizedTokenImageScale(token.imageScale)
+    if (action == 'shrink-token-image') {
+      token.imageScale = normalizedTokenImageScale(currentScale - tokenImageScaleStep)
+      captureHistory('缩小立绘')
+      draw()
+      return
+    }
+    if (action == 'enlarge-token-image') {
+      token.imageScale = normalizedTokenImageScale(currentScale + tokenImageScaleStep)
+      captureHistory('放大立绘')
+      draw()
+      return
+    }
+    if (action == 'reset-token-image') {
+      token.imageScale = 1
+      captureHistory('重置立绘大小')
+      draw()
+      return
+    }
+  }
 
   switch (action) {
     case 'open-sheet':
@@ -1262,7 +1320,7 @@ function renderCanvas(): void {
     if (isUsableTokenImage(tokImg)) {
       const iw = tokImg.naturalWidth
       const ih = tokImg.naturalHeight
-      const scale = Math.min(size / iw, size / ih)
+      const scale = Math.min(size / iw, size / ih) * normalizedTokenImageScale(t.imageScale)
       const drawW = iw * scale
       const drawH = ih * scale
       const previousSmoothing = ctx.imageSmoothingEnabled
@@ -2104,22 +2162,72 @@ function gridSnap(
 }
 
 function ensureToken(code: string): (typeof mm.tokens)[number] | undefined {
-  let t = tokenByCode.value.get(code)
+  let t = mm.tokens.find((token) => token.code == code)
   const c = creatureByCode.value.get(code)
   if (!c) return undefined
   if (!t) {
     const fp = creatureFootprint(code)
+    const position = nextAvailableTokenPosition(fp)
     t = {
       code,
-      x: snapPosition(fp, 0),
-      y: snapPosition(fp, 0),
-      color: factionColor[c.faction] ?? '#e53935'
+      x: position.x,
+      y: position.y,
+      color: factionColor[c.faction] ?? '#e53935',
+      imageScale: 1
     }
     mm.tokens.push(t)
   } else {
     t.color = factionColor[c.faction] ?? '#e53935'
   }
   return t
+}
+
+function tokenFootprintsOverlap(
+  a: { x: number; y: number; footprint: number },
+  b: { x: number; y: number; footprint: number }
+): boolean {
+  const aHalf = a.footprint / 2
+  const bHalf = b.footprint / 2
+  return (
+    Math.abs(a.x - b.x) < aHalf + bHalf && Math.abs(a.y - b.y) < aHalf + bHalf
+  )
+}
+
+function nextAvailableTokenPosition(footprint: number): { x: number; y: number } {
+  const columns = 5
+  const canvasW = Math.max(1, canvasRef.value?.width ?? canvasWidth.value)
+  const canvasH = Math.max(1, canvasRef.value?.height ?? canvasHeight.value)
+  const viewScale = Number.isFinite(mm.viewScale) && mm.viewScale > 0 ? mm.viewScale : 1
+  const cellSize = Number.isFinite(mm.cellSize) && mm.cellSize > 0 ? mm.cellSize : 50
+  const centerCellX = ((canvasW / 2 - mm.viewX) / viewScale - mm.offsetX) / cellSize
+  const centerCellY = ((canvasH / 2 - mm.viewY) / viewScale - mm.offsetY) / cellSize
+  const startCellX = Math.floor(centerCellX - columns / 2)
+  const startCellY = Math.floor(centerCellY - 1)
+  for (let idx = 0; idx < 1200; idx++) {
+    const cellX = startCellX + (idx % columns)
+    const cellY = startCellY + Math.floor(idx / columns)
+    const candidate = {
+      x: snapPosition(footprint, cellX + footprint / 2),
+      y: snapPosition(footprint, cellY + footprint / 2),
+      footprint
+    }
+    const occupied = mm.tokens.some((token) =>
+      tokenFootprintsOverlap(candidate, {
+        x: token.x,
+        y: token.y,
+        footprint: creatureFootprint(token.code)
+      })
+    )
+    if (!occupied) return { x: candidate.x, y: candidate.y }
+  }
+  return {
+    x: snapPosition(footprint, centerCellX + mm.tokens.length + footprint / 2),
+    y: snapPosition(footprint, centerCellY + footprint / 2)
+  }
+}
+
+function ensureCreatureTokens(): void {
+  for (const creature of Creatures.value) ensureToken(creature.code())
 }
 
 function snappedTokenPosition(code: string, x: number, y: number): { x: number; y: number } {
@@ -3084,7 +3192,9 @@ onMounted(() => {
     scheduleDraw,
     { deep: true }
   )
-  watch(() => mm.tokens.map((t) => [t.x, t.y, t.color] as const), scheduleDraw, { deep: true })
+  watch(() => mm.tokens.map((t) => [t.x, t.y, t.color, t.imageScale] as const), scheduleDraw, {
+    deep: true
+  })
   watch(
     () => [
       mm.fogVisible,
@@ -3341,6 +3451,7 @@ function ESSerializerSerialize(options: SerializeStateOptions = {}): string {
       activeInitiativeCodes: Creatures.value.filter((c) => c.inRound).map((c) => c.code()),
       initiativeTransparent: statusMemory.value.initiativeTransparent,
       initiativeControlsExpanded: statusMemory.value.initiativeControlsExpanded,
+      initiativeCardScale: statusMemory.value.initiativeCardScale,
       newStatus: statusMemory.value.newStatus
     },
     main: {
@@ -3545,6 +3656,11 @@ function loadStatusData(data: Record<string, unknown>): void {
     0,
     Math.floor(Number(statusMemory.value.currentInitiativeIdx) || 0)
   )
+  statusMemory.value.initiativeCardScale = clampNumber(
+    Number(statusMemory.value.initiativeCardScale) || 1,
+    0.5,
+    2
+  )
   if (Array.isArray(activeInitiativeCodes)) {
     const active = new Set(activeInitiativeCodes)
     for (const creature of Creatures.value) creature.inRound = active.has(creature.code())
@@ -3633,7 +3749,12 @@ function loadMapData(
   const viewScaleRatio = currentRenderScale() / sourceRenderScale
   Object.assign(mm, new MapMemory())
   if (options.preserveAssets) mm.assets = previousAssets
-  if (m.tokens) mm.tokens = m.tokens as typeof mm.tokens
+  if (Array.isArray(m.tokens)) {
+    mm.tokens = (m.tokens as typeof mm.tokens).map((token) => ({
+      ...token,
+      imageScale: normalizedTokenImageScale(token.imageScale)
+    }))
+  }
   if (m.cellSize) mm.cellSize = m.cellSize as number
   if (m.offsetX !== undefined) mm.offsetX = m.offsetX as number
   if (m.offsetY !== undefined) mm.offsetY = m.offsetY as number
@@ -3667,6 +3788,7 @@ function loadMapData(
       ? (m.tokenImages as { key: string; dataUrl: string }[])
       : undefined
   })
+  ensureCreatureTokens()
   loadTokenImages()
   loadBgFromDataUrl()
   fitCanvas()

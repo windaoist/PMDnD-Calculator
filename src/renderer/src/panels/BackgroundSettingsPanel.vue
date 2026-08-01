@@ -265,6 +265,7 @@ function importBackground(event: Event): void {
   overflow: auto;
   box-sizing: border-box;
   padding: 0.75em;
+  container-type: inline-size;
 }
 
 .background-panel h3 {
@@ -350,5 +351,22 @@ function importBackground(event: Event): void {
   :deep(.vue-number-input--small.vue-number-input--inline.vue-number-input--controls > input) {
   box-sizing: border-box;
   width: 100% !important;
+}
+
+@container (max-width: 460px) {
+  .section-line {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-line select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .preview-line,
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

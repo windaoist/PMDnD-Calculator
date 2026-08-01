@@ -334,6 +334,7 @@ async function settle(power: number, name: string): Promise<void> {
 <style scoped>
 .fall-panel {
   overflow: auto;
+  container-type: inline-size;
 }
 
 .fall-section {
@@ -439,7 +440,7 @@ async function settle(power: number, name: string): Promise<void> {
   font-size: 13px;
 }
 
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   .fall-panel .panel-field-grid {
     grid-template-columns: 1fr;
   }

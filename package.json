@@ -1,6 +1,6 @@
 {
   "name": "pmdnd-calculator",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "PMDnD计算器",
   "main": "./out/main/index.js",
   "author": "PMDnD全体贡献者",

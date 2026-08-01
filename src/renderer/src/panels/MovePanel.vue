@@ -368,7 +368,7 @@ onUpdated(() => {
 
 <template>
   <div class="move-panel">
-    <BattleCharacterSidebar :on-change="thisOnChangeSelectedCreature" />
+    <BattleCharacterSidebar collapsible :on-change="thisOnChangeSelectedCreature" />
     <div class="move-panel-main">
       <div class="move-panel-header">
         <div class="w3-bar">

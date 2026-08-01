@@ -95,6 +95,9 @@ function saveCurrentSettings(asset: MapAsset): void {
   <div class="asset-panel">
     <div class="asset-header">
       <button class="w3-button w3-blue" @click="fileInput?.click()">导入 PNG</button>
+      <p class="asset-import-hint">
+        手动导入图片作为角色Token（地图标识）时，请确保导入图片的名称与对应角色卡的角色姓名（中文或拉丁字母均可）相同
+      </p>
       <input
         ref="fileInput"
         type="file"
@@ -282,6 +285,7 @@ function saveCurrentSettings(asset: MapAsset): void {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  container-type: inline-size;
 }
 
 .asset-header {
@@ -294,6 +298,18 @@ function saveCurrentSettings(asset: MapAsset): void {
 
 .asset-header h3 {
   margin: 0;
+}
+
+.asset-header > .w3-button {
+  flex-shrink: 0;
+}
+
+.asset-import-hint {
+  flex: 1;
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .empty-state {
@@ -412,5 +428,28 @@ function saveCurrentSettings(asset: MapAsset): void {
   :deep(.vue-number-input--small.vue-number-input--inline.vue-number-input--controls > input) {
   box-sizing: border-box;
   width: 100% !important;
+}
+
+@container (max-width: 520px) {
+  .asset-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .asset-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(96px, 38%) minmax(0, 1fr);
+  }
+
+  .asset-list {
+    border-right: 0;
+    border-bottom: 1px solid #e0e0e0;
+    padding-right: 0;
+    padding-bottom: 0.5em;
+  }
+
+  .preview-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

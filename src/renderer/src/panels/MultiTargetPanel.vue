@@ -1221,7 +1221,9 @@ function applyCasterCost(): void {
 
 function applyAllAttack(): void {
   const log = logText.value
-  if (targets.value.length > 0) {
+  if (atkType.value == 0) {
+    applyCasterCost()
+  } else if (targets.value.length > 0) {
     for (const entry of targets.value) applyAttack(entry)
   } else {
     applyCasterCost()
@@ -1770,14 +1772,24 @@ onUpdated(() => {
             >
               {{ c.name() }}
             </button>
-            <label
-              class="target-concentration"
-              :class="{ active: c.concentrating }"
-              :title="c.concentrating ? '正在专注；点击取消' : '点击标记为正在专注'"
-            >
-              <input v-model="c.concentrating" type="checkbox" />
-              <span>专注</span>
-            </label>
+            <div class="target-choice-actions">
+              <label
+                class="target-concentration"
+                :class="{ active: c.concentrating }"
+                :title="c.concentrating ? '正在专注；点击取消' : '点击标记为正在专注'"
+              >
+                <input v-model="c.concentrating" type="checkbox" />
+                <span>专注</span>
+              </label>
+              <button
+                class="w3-button w3-tiny target-new-round"
+                type="button"
+                title="恢复该角色的回合资源并触发回合开始状态"
+                @click="c.newRound()"
+              >
+                新回合
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2372,7 +2384,10 @@ onUpdated(() => {
       </div>
     </div>
 
-    <div v-if="!hasPowerSelection() || targets.length == 0" style="margin-top: 0.5em">
+    <div
+      v-if="atkType == 0 || !hasPowerSelection() || targets.length == 0"
+      style="margin-top: 0.5em"
+    >
       <button class="w3-button w3-red" @click="applyAllAttack()">消耗 PP</button>
       <button
         class="w3-button w3-light-gray"
@@ -2386,6 +2401,10 @@ onUpdated(() => {
 </template>
 
 <style scoped>
+.multi-target-panel {
+  container-type: inline-size;
+}
+
 .multi-target-panel :is(input, select, textarea) {
   max-width: 100%;
 }
@@ -2781,6 +2800,8 @@ onUpdated(() => {
 
 .target-choice {
   display: inline-flex;
+  min-width: 9.5em;
+  flex-direction: column;
   align-items: stretch;
   overflow: hidden;
   border: 1px solid #d5d9e0;
@@ -2792,12 +2813,20 @@ onUpdated(() => {
   border-radius: 0;
 }
 
+.target-choice-actions {
+  display: flex;
+  min-height: 28px;
+  align-items: stretch;
+  border-top: 1px solid #d5d9e0;
+}
+
 .target-concentration {
   display: inline-flex;
+  flex: 1 1 50%;
   align-items: center;
+  justify-content: center;
   gap: 3px;
   padding: 0 6px;
-  border-left: 1px solid #d5d9e0;
   color: #737b89;
   font-size: 11px;
   cursor: pointer;
@@ -2812,6 +2841,21 @@ onUpdated(() => {
 
 .target-concentration input {
   margin: 0;
+}
+
+.target-new-round {
+  flex: 1 1 50%;
+  padding: 3px 6px;
+  border-left: 1px solid #d5d9e0;
+  border-radius: 0;
+  color: #4f5968;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.target-new-round:hover {
+  background: #e8f0fe !important;
+  color: #1f4f8a !important;
 }
 
 .target-field-effect-hint {
@@ -2965,7 +3009,7 @@ onUpdated(() => {
   font-size: 12px;
 }
 
-@media (max-width: 900px) {
+@container (max-width: 900px) {
   .spell-selector-main {
     grid-template-columns: 1fr 1fr;
   }
@@ -2983,7 +3027,7 @@ onUpdated(() => {
   }
 }
 
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   .spell-selector-header {
     align-items: stretch;
     flex-direction: column;

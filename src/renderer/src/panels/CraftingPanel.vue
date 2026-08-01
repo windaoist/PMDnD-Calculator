@@ -100,7 +100,7 @@ const armorCustom = computed(() => armorPower(craftCoefVal.value * memory.value.
 <style scoped>
 .armor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 0.55em;
   margin-top: 0.75em;
 }

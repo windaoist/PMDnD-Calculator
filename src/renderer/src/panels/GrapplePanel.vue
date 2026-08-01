@@ -55,7 +55,7 @@ const targetDefenseBonus = computed(() => {
   const option = selectedDefenseOption.value
   return option.mode == 'save' ? defender.skillSave(option.skill) : defender.skillMod(option.skill)
 })
-const targetIncapacitated = computed(() => target.value?.status.incapacitated() ?? false)
+const targetIncapacitated = computed(() => target.value?.grandStatus().incapacitated ?? false)
 
 const sizeAllowed = computed(() => {
   if (!grappler.value || !target.value) return false

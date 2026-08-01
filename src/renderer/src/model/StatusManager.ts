@@ -79,6 +79,13 @@ export class StatusManager {
 
   refreshList(): void {
     const newStatus: Status[] = []
+    const stackByName = new Map<string, number>()
+
+    for (const status of this.status) {
+      stackByName.set(status.name, (stackByName.get(status.name) ?? 0) + status.stack)
+    }
+
+    const stackOf = (name: string): number => stackByName.get(name) ?? 0
 
     const collected: Set<string> = new Set()
     for (const ss of StatusList) {
@@ -87,8 +94,8 @@ export class StatusManager {
       }
 
       if (ss.oppositeName.length > 0) {
-        const s = this.stackOfStatus(ss.name)
-        const t = this.stackOfStatus(ss.oppositeName)
+        const s = stackOf(ss.name)
+        const t = stackOf(ss.oppositeName)
         const stk = s - t
         if (stk >= 0) {
           const x = ss.duplicate()
@@ -103,7 +110,7 @@ export class StatusManager {
         collected.add(ss.oppositeName)
       } else {
         const x = ss.duplicate()
-        x.stack = Math.max(0, this.stackOfStatus(ss.name))
+        x.stack = Math.max(0, stackOf(ss.name))
         newStatus.push(x)
       }
     }
@@ -155,8 +162,12 @@ export class StatusManager {
       false
     )
 
+    const activeStatusNames = new Set(
+      this.status.filter((status) => status.stack > 0).map((status) => status.name)
+    )
+
     for (const s of this.status) {
-      if (s.parentName.length > 0 && this.hasStatus(s.parentName)) {
+      if (s.parentName.length > 0 && activeStatusNames.has(s.parentName)) {
         continue
       }
 

@@ -9,6 +9,7 @@ import {
   battleMemoryStatus,
   BattleMemory,
   currentMove,
+  moveUseCharge,
   moveMemory,
   MoveMemory,
   surviveMemory,
@@ -1217,6 +1218,7 @@ function applyCasterCost(): void {
           ? movem.value.nullCostPP
           : memory.value.costPP
   if (cost > 0) atk.currentPP = Math.max(0, atk.currentPP - cost)
+  moveUseCharge()
 }
 
 function applyAllAttack(): void {

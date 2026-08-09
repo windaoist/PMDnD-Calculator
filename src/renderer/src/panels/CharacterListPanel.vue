@@ -72,6 +72,12 @@ function openCharacter(code: string): void {
 function openCharacterStatus(code: string): void {
   openStatusPanel?.(code)
 }
+
+function deleteCharacter(c: Creature): void {
+  if (!window.confirm(`确定删除角色“${c.name()}”（${c.code()}）吗？`)) return
+  const index = Creatures.value.findIndex((creature) => creature.code() == c.code())
+  if (index >= 0) Creatures.value.splice(index, 1)
+}
 </script>
 
 <template>
@@ -168,6 +174,15 @@ function openCharacterStatus(code: string): void {
             {{ c.initiative() + c.tempInitiative }}
           </span>
           <span style="flex: 1" />
+          <button
+            type="button"
+            class="delete-character-button"
+            :aria-label="`删除角色 ${c.name()}`"
+            :title="`删除角色 ${c.name()}`"
+            @click.stop="deleteCharacter(c)"
+          >
+            删除
+          </button>
           <span
             v-if="showHP"
             :style="{
@@ -204,5 +219,26 @@ function openCharacterStatus(code: string): void {
 <style scoped>
 .creature-row:hover {
   background: rgba(0, 0, 0, 0.03);
+}
+
+.delete-character-button {
+  padding: 1px 6px;
+  border: 1px solid #c62828;
+  border-radius: 3px;
+  background: #e53935;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.delete-character-button:hover {
+  background: #c62828;
+}
+
+.delete-character-button:focus-visible {
+  outline: 2px solid rgba(198, 40, 40, 0.4);
+  outline-offset: 1px;
 }
 </style>

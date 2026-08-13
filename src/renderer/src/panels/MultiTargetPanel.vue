@@ -82,9 +82,17 @@ const showMoveDescription = ref(false)
 const casterExpanded = ref(true)
 const damageDefList = ['物理', '特殊']
 const openPanel = inject<OpenPanelFn>('openPanel')
+const factionOrder: Record<string, number> = { 玩家: 0, 友方: 1, 中立: 2, 敌方: 3 }
 
 const atkType = computed(() => memory.value.attackType)
 const casterMoveList = computed(() => memory.value.attacker?.getMoveInMemoryList() ?? [])
+const sortedCasters = computed<Creature[]>(() =>
+  [...Creatures.value].sort((a, b) => {
+    const diff = b.initiative() + b.tempInitiative - (a.initiative() + a.tempInitiative)
+    if (diff != 0) return diff
+    return (factionOrder[a.faction] ?? 4) - (factionOrder[b.faction] ?? 4)
+  })
+)
 
 function chooseCaster(code: string): void {
   memory.value.attacker = Creatures.value.find((c) => c.code() == code) ?? null
@@ -1338,7 +1346,7 @@ onUpdated(() => {
               @change="chooseCaster(($event.target as HTMLSelectElement).value)"
             >
               <option value="">未选择</option>
-              <option v-for="c in Creatures" :key="c.code()" :value="c.code()">
+              <option v-for="c in sortedCasters" :key="c.code()" :value="c.code()">
                 {{ c.name() }} {{ c.code() }}
               </option>
             </select>

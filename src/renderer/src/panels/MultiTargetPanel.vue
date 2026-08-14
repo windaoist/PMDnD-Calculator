@@ -1022,7 +1022,7 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
     ms.enableMiss
   )
 
-  const cr = battleLvStatus()
+  const cr = battleLvStatus(creature)
   const defValue = Math.max(
     1,
     Math.floor(creature.getAttackAttributeByName(ms.damageDefense) + ms.damageDefenseD)

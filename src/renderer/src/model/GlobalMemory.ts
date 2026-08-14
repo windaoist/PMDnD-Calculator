@@ -793,8 +793,8 @@ export function battleLvHeal(): number {
   return calculateBattleLvGeneric(battleMemoryHeal.value, battleMemory.value.attacker)
 }
 
-export function battleLvStatus(): number {
-  return calculateBattleLvGeneric(battleMemoryStatus.value, battleMemory.value.defender)
+export function battleLvStatus(character: Creature | null = battleMemory.value.defender): number {
+  return calculateBattleLvGeneric(battleMemoryStatus.value, character)
 }
 
 function calculateGenericStab(memory: BattleMemory, attacker: Creature | null): number {

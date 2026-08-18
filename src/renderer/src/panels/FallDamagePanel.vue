@@ -175,7 +175,7 @@ async function settle(power: number, name: string): Promise<void> {
           15）。成功时只改变位置，不受到此次伤害，也不触发“高空抛物”效果。
         </li>
         <li v-if="weaponCreature">
-          被投掷生物落地后需再进行一次体操检定（DC 10），失败则陷入倒地状态。
+          被投掷物生物落地后需再进行一次体操检定（DC 10），失败则陷入倒地状态。若其为高空坠落，则体操检定难度改为（DC = 10 + 高空抛物系数向下取整）。
         </li>
         <li v-if="canKnockTargetBack">
           临时武器重量不少于 20kg，且目标体重不超过被投掷物的 2 倍；命中后目标会被击退最多 1.5m。

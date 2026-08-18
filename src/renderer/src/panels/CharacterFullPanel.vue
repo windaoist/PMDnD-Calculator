@@ -280,6 +280,18 @@ function raceTypeCount(type: string): number {
   return memory.value.cur?.races.filter((race) => race.type == type).length ?? 0
 }
 
+function enabledRaceCount(): number {
+  return memory.value.cur?.races.filter((race) => race.type == '种族' && race.enabled).length ?? 0
+}
+
+function levelFrom(type: string): number {
+  return (
+    memory.value.cur?.races.reduce((total, race) => {
+      return race.type == type && (type != '种族' || race.enabled) ? total + race.lv : total
+    }, 0) ?? 0
+  )
+}
+
 function castLvFrom(type: string): number {
   return (
     memory.value.cur?.races.reduce((total, race) => {
@@ -288,17 +300,46 @@ function castLvFrom(type: string): number {
   )
 }
 
+function raceAttributeText(race: Race): string {
+  const value = race.attribute
+  return [value.hp, value.patk, value.pdef, value.satk, value.sdef, value.spd, value.pp].join('/')
+}
+
+function updateRaceAttributes(race: Race, event: Event): void {
+  const input = event.target as HTMLInputElement
+  const values = input.value.split(/[\/／]/).map((value) => Number(value.trim()))
+  if (values.length != 7 || values.some((value) => !Number.isFinite(value))) {
+    input.setCustomValidity('请输入 7 项用斜杠分隔的数字。')
+    input.reportValidity()
+    return
+  }
+  input.setCustomValidity('')
+  race.attribute.hp = values[0]
+  race.attribute.patk = values[1]
+  race.attribute.pdef = values[2]
+  race.attribute.satk = values[3]
+  race.attribute.sdef = values[4]
+  race.attribute.spd = values[5]
+  race.attribute.pp = values[6]
+  race.attribute.validate()
+}
+
+function validateRaceValue(race: Race): void {
+  race.validate()
+}
+
 function enableRace(race: Race, event: Event): void {
   const cur = memory.value.cur
   if (!cur) return
   const input = event.target as HTMLInputElement
-  if (!input.checked) {
+  if (
+    !input.checked &&
+    cur.races.filter((entry) => entry.type == '种族' && entry.enabled).length == 1
+  ) {
     input.checked = true
     return
   }
-  cur.races
-    .filter((entry) => entry.type == '种族')
-    .forEach((entry) => (entry.enabled = entry === race))
+  race.enabled = input.checked
   cur.shallowRefresh()
 }
 
@@ -335,7 +376,6 @@ function addTemporaryRace(): void {
     temporaryRaceError.value = '等级、倍率和戏法位必须是非负数字。'
     return
   }
-  cur.races.filter((race) => race.type == '种族').forEach((race) => (race.enabled = false))
   const race = new Race(
     '种族',
     name,
@@ -360,7 +400,7 @@ function removeTemporaryRace(race: Race): void {
   if (index < 0) return
   const wasEnabled = race.enabled
   cur.races.splice(index, 1)
-  if (wasEnabled) {
+  if (wasEnabled && !cur.races.some((entry) => entry.type == '种族' && entry.enabled)) {
     const fallback = cur.races.find((entry) => entry.type == '种族')
     if (fallback) fallback.enabled = true
   }
@@ -2854,7 +2894,8 @@ if (memory.value.cur != null) {
             <summary class="section-summary">
               <span class="section-title">种族</span>
               <span class="summary-metrics">
-                <span>{{ raceTypeCount('种族') }} 项</span>
+                <span>启用 {{ enabledRaceCount() }} / {{ raceTypeCount('种族') }} 项</span>
+                <span>等级 {{ levelFrom('种族') }}</span>
                 <span>CR {{ memory.cur.battleLvFrom('种族').toFixed(1) }}</span>
                 <span>施法 {{ castLvFrom('种族').toFixed(1) }}</span>
               </span>
@@ -2935,19 +2976,28 @@ if (memory.value.cur != null) {
                 </thead>
                 <tbody>
                   <tr
-                    v-for="value in memory.cur.races.filter((s) => s.type == '种族')"
-                    :key="value.name"
+                    v-for="(value, index) in memory.cur.races.filter((s) => s.type == '种族')"
+                    :key="index"
                   >
                     <td>
                       <div class="race-name-cell">
-                        <label class="race-enable-control" title="种族同时只能启用一个">
+                        <label
+                          class="race-enable-control"
+                          title="可同时启用多个种族，等级与倍率会叠加计算"
+                        >
                           <input
                             type="checkbox"
                             :checked="value.enabled"
                             @change="enableRace(value, $event)"
                           />
-                          <span>{{ value.name }}</span>
+                          <span>启用</span>
                         </label>
+                        <input
+                          v-model="value.name"
+                          class="table-cell-input race-name-input"
+                          type="text"
+                          aria-label="种族名"
+                        />
                         <button
                           v-if="value.temporary"
                           class="temporary-race-delete"
@@ -2960,35 +3010,79 @@ if (memory.value.cur != null) {
                       </div>
                     </td>
                     <td>
-                      <vue-number-input
-                        v-model="value.lv"
-                        size="small"
-                        inline
-                        center
-                        :step="1"
-                        :min="0"
+                      <input
+                        v-model.number="value.lv"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        @change="validateRaceValue(value)"
                       />
                     </td>
-                    <td :style="{ color: valueToColorBinary(value.battleScale) }">
-                      {{ value.battleScale.toFixed(2) }}
-                    </td>
-                    <td :style="{ color: valueToColorBinary(value.castScale) }">
-                      {{ value.castScale.toFixed(2) }}
-                    </td>
-                    <td>{{ value.battleLv().toFixed(1) }}</td>
-                    <td>{{ value.castLv().toFixed(1) }}</td>
                     <td>
-                      {{ value.attribute.hp }}/{{ value.attribute.patk }}/{{
-                        value.attribute.pdef
-                      }}/{{ value.attribute.satk }}/{{ value.attribute.sdef }}/{{
-                        value.attribute.spd
-                      }}/{{ value.attribute.pp }}
+                      <input
+                        v-model.number="value.battleScale"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        :style="{ color: valueToColorBinary(value.battleScale) }"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                     <td>
-                      {{ value.spellCount() }}
+                      <input
+                        v-model.number="value.castScale"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        :style="{ color: valueToColorBinary(value.castScale) }"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                     <td>
-                      {{ value.cantripCount }}
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.battleLv().toFixed(1)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.castLv().toFixed(1)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input race-attribute-input"
+                        type="text"
+                        :value="raceAttributeText(value)"
+                        title="HP/物攻/物防/特攻/特防/速度/PP"
+                        @change="updateRaceAttributes(value, $event)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.spellCount()"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model.number="value.cantripCount"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                   </tr>
                 </tbody>
@@ -3001,6 +3095,7 @@ if (memory.value.cur != null) {
               <span class="section-title">职业</span>
               <span class="summary-metrics">
                 <span>{{ raceTypeCount('职业') }} 项</span>
+                <span>等级 {{ levelFrom('职业') }}</span>
                 <span>CR {{ memory.cur.battleLvFrom('职业').toFixed(1) }}</span>
                 <span>施法 {{ castLvFrom('职业').toFixed(1) }}</span>
               </span>
@@ -3022,40 +3117,91 @@ if (memory.value.cur != null) {
                 </thead>
                 <tbody>
                   <tr
-                    v-for="value in memory.cur.races.filter((s) => s.type == '职业')"
-                    :key="value.name"
+                    v-for="(value, index) in memory.cur.races.filter((s) => s.type == '职业')"
+                    :key="index"
                   >
-                    <td>{{ value.name }}</td>
                     <td>
-                      <vue-number-input
-                        v-model="value.lv"
-                        size="small"
-                        inline
-                        center
-                        :step="1"
-                        :min="0"
+                      <input
+                        v-model="value.name"
+                        class="table-cell-input"
+                        type="text"
+                        aria-label="职业名"
                       />
                     </td>
-                    <td :style="{ color: valueToColorBinary(value.battleScale) }">
-                      {{ value.battleScale.toFixed(2) }}
-                    </td>
-                    <td :style="{ color: valueToColorBinary(value.castScale) }">
-                      {{ value.castScale.toFixed(2) }}
-                    </td>
-                    <td>{{ value.battleLv().toFixed(1) }}</td>
-                    <td>{{ value.castLv().toFixed(1) }}</td>
                     <td>
-                      {{ value.attribute.hp }}/{{ value.attribute.patk }}/{{
-                        value.attribute.pdef
-                      }}/{{ value.attribute.satk }}/{{ value.attribute.sdef }}/{{
-                        value.attribute.spd
-                      }}/{{ value.attribute.pp }}
+                      <input
+                        v-model.number="value.lv"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                     <td>
-                      {{ value.spellCount() }}
+                      <input
+                        v-model.number="value.battleScale"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        :style="{ color: valueToColorBinary(value.battleScale) }"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                     <td>
-                      {{ value.cantripCount }}
+                      <input
+                        v-model.number="value.castScale"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        :style="{ color: valueToColorBinary(value.castScale) }"
+                        @change="validateRaceValue(value)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.battleLv().toFixed(1)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.castLv().toFixed(1)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input race-attribute-input"
+                        type="text"
+                        :value="raceAttributeText(value)"
+                        title="HP/物攻/物防/特攻/特防/速度/PP"
+                        @change="updateRaceAttributes(value, $event)"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="table-cell-input readonly-cell-input"
+                        type="text"
+                        readonly
+                        :value="value.spellCount()"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model.number="value.cantripCount"
+                        class="table-cell-input numeric-cell-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        @change="validateRaceValue(value)"
+                      />
                     </td>
                   </tr>
                 </tbody>
@@ -3850,24 +3996,97 @@ if (memory.value.cur != null) {
   white-space: normal;
 }
 
+.race-career-table :is(th, td):nth-child(1) {
+  width: 17%;
+}
+
+.race-career-table :is(th, td):nth-child(2) {
+  width: 7%;
+}
+
+.race-career-table :is(th, td):is(:nth-child(3), :nth-child(4)) {
+  width: 8%;
+}
+
+.race-career-table :is(th, td):nth-child(5) {
+  width: 8%;
+}
+
+.race-career-table :is(th, td):nth-child(6) {
+  width: 9%;
+}
+
+.race-career-table :is(th, td):nth-child(7) {
+  width: 29%;
+}
+
+.race-career-table :is(th, td):is(:nth-child(8), :nth-child(9)) {
+  width: 7%;
+}
+
 .race-career-table :deep(.vue-number-input) {
   width: 100%;
   max-width: 100%;
 }
 
+.table-cell-input {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  box-sizing: border-box;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+.numeric-cell-input {
+  appearance: textfield;
+  padding-inline: 2px;
+}
+
+.numeric-cell-input::-webkit-inner-spin-button,
+.numeric-cell-input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.table-cell-input:focus {
+  border-color: #2196f3;
+  outline: 2px solid rgba(33, 150, 243, 0.18);
+}
+
+.readonly-cell-input {
+  background: rgba(0, 0, 0, 0.035);
+  color: #666;
+  cursor: text;
+}
+
+.race-attribute-input {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+}
+
 .race-name-cell {
   display: flex;
-  min-width: 8.5em;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   gap: 0.4em;
 }
 
+.race-name-input {
+  flex: 1 1 auto;
+}
+
 .race-enable-control {
   display: inline-flex;
-  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.35em;
+  font-size: 11px;
 }
 
 .race-enable-control input {

@@ -18,8 +18,11 @@ const showCode = ref(true)
 const showHP = ref(true)
 const showPP = ref(true)
 const showInitiative = ref(false)
-const sortBy = ref<'name' | 'code' | 'faction' | 'initiative'>('name')
+const sortBy = ref<'custom' | 'name' | 'code' | 'faction' | 'initiative'>('custom')
 const filterFaction = ref<string>('全部')
+const draggedCode = ref('')
+const dragOverCode = ref('')
+const dropPosition = ref<'before' | 'after'>('before')
 
 const factionOrder: Record<string, number> = { 玩家: 0, 友方: 1, 中立: 2, 敌方: 3 }
 const factionHpBg: Record<string, string> = {
@@ -44,11 +47,50 @@ const sortedCreatures = computed(() => {
       if (diff != 0) return diff
       return (factionOrder[a.faction] ?? 4) - (factionOrder[b.faction] ?? 4)
     })
-  } else {
+  } else if (sortBy.value == 'faction') {
     list.sort((a, b) => (factionOrder[a.faction] ?? 4) - (factionOrder[b.faction] ?? 4))
   }
   return list
 })
+
+function startDrag(c: Creature, event: DragEvent): void {
+  if (sortBy.value != 'custom') return
+  draggedCode.value = c.code()
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', c.code())
+  }
+}
+
+function updateDragTarget(c: Creature, event: DragEvent): void {
+  if (!draggedCode.value || draggedCode.value == c.code()) {
+    dragOverCode.value = ''
+    return
+  }
+  const row = event.currentTarget as HTMLElement
+  dragOverCode.value = c.code()
+  dropPosition.value =
+    event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2 ? 'before' : 'after'
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+function dropCharacter(c: Creature): void {
+  const sourceIndex = Creatures.value.findIndex((item) => item.code() == draggedCode.value)
+  if (sourceIndex < 0 || draggedCode.value == c.code()) {
+    finishDrag()
+    return
+  }
+
+  const [dragged] = Creatures.value.splice(sourceIndex, 1)
+  const targetIndex = Creatures.value.findIndex((item) => item.code() == c.code())
+  Creatures.value.splice(targetIndex + (dropPosition.value == 'after' ? 1 : 0), 0, dragged)
+  finishDrag()
+}
+
+function finishDrag(): void {
+  draggedCode.value = ''
+  dragOverCode.value = ''
+}
 
 function hpTextColor(c: Creature): string {
   const pct = c.hpRatio()
@@ -117,6 +159,7 @@ function deleteCharacter(c: Creature): void {
       </label>
       <span style="font-size: 11px; color: #666">排序</span>
       <select v-model="sortBy" style="font-size: 11px; width: auto; padding: 1px">
+        <option value="custom">自定义</option>
         <option value="name">名字</option>
         <option value="code">代号</option>
         <option value="initiative">先攻</option>
@@ -136,8 +179,15 @@ function deleteCharacter(c: Creature): void {
         v-for="c in sortedCreatures"
         :key="c.code()"
         class="creature-row"
+        :class="{
+          dragging: draggedCode == c.code(),
+          'drop-before': dragOverCode == c.code() && dropPosition == 'before',
+          'drop-after': dragOverCode == c.code() && dropPosition == 'after'
+        }"
         style="cursor: pointer; position: relative; overflow: hidden"
         title="单击打开详情，右键打开状态管理"
+        @dragover.prevent="updateDragTarget(c, $event)"
+        @drop.prevent.stop="dropCharacter(c)"
         @click="openCharacter(c.code())"
         @contextmenu.prevent.stop="openCharacterStatus(c.code())"
       >
@@ -157,6 +207,16 @@ function deleteCharacter(c: Creature): void {
         <div
           style="position: relative; padding: 3px 8px; display: flex; align-items: center; gap: 6px"
         >
+          <span
+            class="drag-handle"
+            :class="{ disabled: sortBy != 'custom' }"
+            :draggable="sortBy == 'custom'"
+            :title="sortBy == 'custom' ? '拖动调整角色顺序' : '切换到自定义排序后可拖动'"
+            @click.stop
+            @dragstart.stop="startDrag(c, $event)"
+            @dragend="finishDrag"
+            >☰</span
+          >
           <span
             :style="{
               display: 'inline-block',
@@ -219,6 +279,35 @@ function deleteCharacter(c: Creature): void {
 <style scoped>
 .creature-row:hover {
   background: rgba(0, 0, 0, 0.03);
+}
+
+.creature-row.dragging {
+  opacity: 0.45;
+}
+
+.creature-row.drop-before {
+  box-shadow: inset 0 2px #2196f3;
+}
+
+.creature-row.drop-after {
+  box-shadow: inset 0 -2px #2196f3;
+}
+
+.drag-handle {
+  color: #777;
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle.disabled {
+  color: #ccc;
+  cursor: not-allowed;
 }
 
 .delete-character-button {

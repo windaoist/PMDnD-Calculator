@@ -295,8 +295,6 @@ export class Creature {
     const enabledSpecies = species.filter((race) => race.enabled)
     if (species.length > 0 && enabledSpecies.length == 0) {
       species[0].enabled = true
-    } else if (enabledSpecies.length > 1) {
-      enabledSpecies.slice(1).forEach((race) => (race.enabled = false))
     }
 
     for (let i = 0; i < this.moves.length; i++) {
@@ -542,9 +540,7 @@ export class Creature {
   effectPower(): number {
     // this.validate()
     return Math.floor(
-      this.effectPowerRaw() +
-        this.getBattleAbilityD(3) +
-        this.grandStatus().battleAbilityMdf.get(3)
+      this.effectPowerRaw() + this.getBattleAbilityD(3) + this.grandStatus().battleAbilityMdf.get(3)
     )
   }
 
@@ -777,14 +773,14 @@ export class Creature {
   }
 
   maxPokemonRing(): number {
-    let mx = 0
+    let totalLevel = 0
     for (const r of this.races) {
       if (r.type == '种族' && r.enabled) {
-        mx = Math.max(mx, r.lv)
+        totalLevel += r.lv
       }
     }
     // this.validate()
-    return Math.max(1, Math.floor(mx / 20 + 1))
+    return Math.max(1, Math.floor(totalLevel / 20 + 1))
   }
 
   name(): string {

@@ -36,6 +36,7 @@ const groupIcons: Record<string, string> = {
   检定: '✓',
   场景: '▧',
   工具: '⌘',
+  查阅: '◇',
   关于: 'i',
   存档: '▣'
 }

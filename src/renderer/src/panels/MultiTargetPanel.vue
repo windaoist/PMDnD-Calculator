@@ -23,6 +23,7 @@ import {
   spellAttack,
   spellAttackHeal,
   spellAttackHealShield,
+  lifeStealCalc,
   envTypeMdfTotal,
   envTypeMdfContributions,
   envEffectIntensity,
@@ -30,7 +31,6 @@ import {
   localFieldEffectIntensityContributions,
   getAttackAdvantage,
   dicePct,
-  applyAttackResult,
   applyHealResult,
   applyHealShieldResult,
   applyStatusResult,
@@ -54,6 +54,8 @@ interface TargetEntry {
   diceroll: number
   dicerollD: number
   advantageDelta: number
+  ctLimit: number
+  enableAccuracyAdvance: number
   rollHistory: number[]
 }
 
@@ -293,6 +295,8 @@ function resetTargetRolls(defaultAdvantage: number): void {
     entry.diceroll = autoCrit ? 20 : 10
     entry.dicerollD = 0
     entry.advantageDelta = defaultAdvantage
+    entry.ctLimit = memory.value.ctLimit
+    entry.enableAccuracyAdvance = memory.value.enableAccuracyAdvance
     entry.rollHistory = [entry.diceroll]
   }
 }
@@ -429,6 +433,7 @@ function setCurrentMove(): void {
       memory.value.dicerollD = 0
       memory.value.diceroll = 10
       memory.value.advantageDelta = defaultAdvantage
+      memory.value.lifeStealPercent = 0
       memory.value.rollHistory = [10]
     }
   } else {
@@ -715,6 +720,8 @@ function ensureTargetData(): void {
         diceroll: autoCrit ? 20 : 10,
         dicerollD: 0,
         advantageDelta: defaultAdv,
+        ctLimit: memory.value.ctLimit,
+        enableAccuracyAdvance: memory.value.enableAccuracyAdvance,
         rollHistory: autoCrit ? [20] : [10]
       })
     }
@@ -781,6 +788,26 @@ function batchSetDicerollD(): void {
   for (const t of targets.value) {
     t.dicerollD = batchDicerollD.value
   }
+}
+
+function normalizedCritLimit(value: number): number {
+  return Math.min(20, Math.max(1, Math.floor(Number(value) || 1)))
+}
+
+function setBatchCritLimit(value: number): void {
+  const limit = normalizedCritLimit(value)
+  memory.value.ctLimit = limit
+  for (const entry of targets.value) entry.ctLimit = limit
+}
+
+function toggleBatchAccuracyAdvance(): void {
+  const enabled = memory.value.enableAccuracyAdvance ? 0 : 1
+  memory.value.enableAccuracyAdvance = enabled
+  for (const entry of targets.value) entry.enableAccuracyAdvance = enabled
+}
+
+function toggleTargetAccuracyAdvance(entry: TargetEntry): void {
+  entry.enableAccuracyAdvance = entry.enableAccuracyAdvance ? 0 : 1
 }
 
 function batchSetDamageMdf(value: number = batchDamageMdfD.value): void {
@@ -896,8 +923,9 @@ function computeResult(entry: TargetEntry): TargetResult {
     envTypeMdfTotal([mem.damageType, mem.damageAspect], mem.attacker, defender) +
     entry.damageMdfD
 
+  const ctLimit = normalizedCritLimit(entry.ctLimit)
   const accAdv =
-    mem.enableAccuracyAdvance && entry.diceroll < mem.ctLimit
+    entry.enableAccuracyAdvance && entry.diceroll < ctLimit
       ? mem.attacker.accuracy() - defender.evasion()
       : Math.max(0, mem.attacker.accuracy() - defender.evasion())
 
@@ -906,7 +934,7 @@ function computeResult(entry: TargetEntry): TargetResult {
     entry.dicerollD,
     accAdv + spellModifier() + getAttackAdvantage(mem.spellMod),
     mem.enableCT,
-    mem.ctLimit,
+    ctLimit,
     mem.enableMiss
   )
 
@@ -1042,8 +1070,8 @@ function computeStatusResult(entry: TargetEntry): StatusResult {
       customDamage > 0
         ? customDamageWithMdf(ms, mdf)
         : damageCalcRaw(ms.effect, cr, cr * 2, defValue, 0, mdf, rollPct),
-    heal: damageCalcRaw(ms.effect, cr, 1, 1, 0, healMdfVal, rollPct),
-    shield: damageCalcRaw(ms.effect, cr, 1, 1, 0, healMdfVal, rollPct),
+    heal: damageCalcRaw(ms.effect, cr, 2, 1, 0, healMdfVal, rollPct),
+    shield: damageCalcRaw(ms.effect, cr, 2, 1, 0, healMdfVal, rollPct),
     roll,
     rollPct,
     mdf
@@ -1108,7 +1136,7 @@ const logText = computed<string>(() => {
 
     const ct =
       atkType.value == 1
-        ? { e: mem.enableCT, l: mem.ctLimit, m: mem.enableMiss }
+        ? { e: mem.enableCT, l: normalizedCritLimit(entry.ctLimit), m: mem.enableMiss }
         : atkType.value == 2
           ? {
               e: memoryHeal.value.enableCT,
@@ -1188,31 +1216,28 @@ const logText = computed<string>(() => {
     }
   }
 
+  if (atkType.value == 1 && atk) {
+    const totalDamage = results.value.reduce((total, result) => total + result.damage, 0)
+    const lifeSteal = lifeStealCalc(totalDamage)
+    if (lifeSteal > 0) {
+      let hp = atk.hpSet()
+      const selfTargetIndex = results.value.findIndex((result) => result.code == atk.code())
+      if (selfTargetIndex >= 0) {
+        hp = handleHP(
+          hp,
+          atk.maxHP(),
+          [-results.value[selfTargetIndex].damage, 0],
+          normalizedShieldDamageRatio(mem)
+        )
+      }
+      lines.push(
+        `${atk.name()}吸取了 ${lifeSteal} HP（HP ${showHP(hp)} -> ${showHP(handleHP(hp, atk.maxHP(), [lifeSteal, 0]))}）。`
+      )
+    }
+  }
+
   return lines.join('\n')
 })
-
-function applyAttack(entry: TargetEntry): void {
-  const mem = memory.value
-  const defender = getCreature(entry.code)
-  if (!mem.attacker || !defender) return
-
-  const origDefender = mem.defender
-  const origMdfD = mem.damageMdfD
-  const origDiceroll = mem.diceroll
-  const origDicerollD = mem.dicerollD
-
-  mem.defender = defender
-  mem.damageMdfD = entry.damageMdfD
-  mem.diceroll = entry.diceroll
-  mem.dicerollD = entry.dicerollD
-
-  applyAttackResult()
-
-  mem.defender = origDefender
-  mem.damageMdfD = origMdfD
-  mem.diceroll = origDiceroll
-  mem.dicerollD = origDicerollD
-}
 
 function applyCasterCost(): void {
   const atk = memory.value.attacker
@@ -1234,7 +1259,20 @@ function applyAllAttack(): void {
   if (atkType.value == 0) {
     applyCasterCost()
   } else if (targets.value.length > 0) {
-    for (const entry of targets.value) applyAttack(entry)
+    const lifeSteal = lifeStealCalc(
+      results.value.reduce((total, result) => total + result.damage, 0)
+    )
+    for (let i = 0; i < targets.value.length; i++) {
+      const defender = getCreature(targets.value[i].code)
+      const result = results.value[i]
+      if (!defender || !result) continue
+      defender.takeHP(
+        [-result.damage, 0],
+        normalizedShieldDamageRatio(memory.value)
+      )
+    }
+    memory.value.attacker?.takeHP([lifeSteal, 0])
+    applyCasterCost()
   } else {
     applyCasterCost()
   }
@@ -1838,7 +1876,7 @@ onUpdated(() => {
               <label class="spell-inline-field spell-number-field">
                 <span>暴击阈值</span>
                 <vue-number-input
-                  v-model="memory.ctLimit"
+                  :model-value="memory.ctLimit"
                   size="small"
                   inline
                   center
@@ -1846,6 +1884,7 @@ onUpdated(() => {
                   :step="1"
                   :min="1"
                   :max="20"
+                  @update:model-value="setBatchCritLimit"
                 />
               </label>
               <button
@@ -1858,7 +1897,7 @@ onUpdated(() => {
               <button
                 class="w3-button spell-toggle"
                 :class="{ active: memory.enableAccuracyAdvance }"
-                @click="memory.enableAccuracyAdvance = memory.enableAccuracyAdvance ? 0 : 1"
+                @click="toggleBatchAccuracyAdvance"
               >
                 {{ memory.enableAccuracyAdvance ? '命中减值有效' : '命中减值无效' }}
               </button>
@@ -1941,6 +1980,18 @@ onUpdated(() => {
             <span class="batch-label">调整值</span>
             <vue-number-input v-model="batchDicerollD" size="small" inline center :step="1" />
           </div>
+          <div v-if="atkType == 1" class="batch-group">
+            <span class="batch-label">吸血比例</span>
+            <vue-number-input
+              v-model="memory.lifeStealPercent"
+              size="small"
+              inline
+              center
+              :step="1"
+              :min="0"
+            />
+            <span>%</span>
+          </div>
           <div
             v-if="movem.dmControlRoll"
             class="batch-group"
@@ -1962,7 +2013,7 @@ onUpdated(() => {
 
       <!-- ── 模式 1：攻击 ── -->
       <div v-if="atkType == 1 && targets.length > 0">
-        <table class="w3-table w3-bordered">
+        <table class="w3-table w3-bordered attack-resolution-table">
           <thead>
             <tr class="w3-light-gray">
               <th>防御方</th>
@@ -1971,6 +2022,8 @@ onUpdated(() => {
               <th>优劣势</th>
               <th>攻击掷骰</th>
               <th>其他调整值</th>
+              <th>暴击阈值</th>
+              <th>命中减值</th>
               <th>最终掷骰</th>
               <th style="font-weight: bold">伤害</th>
               <th>专注豁免</th>
@@ -2039,6 +2092,26 @@ onUpdated(() => {
               </td>
               <td>
                 <vue-number-input v-model="entry.dicerollD" size="small" inline center :step="1" />
+              </td>
+              <td>
+                <vue-number-input
+                  v-model="entry.ctLimit"
+                  size="small"
+                  inline
+                  center
+                  :step="1"
+                  :min="1"
+                  :max="20"
+                />
+              </td>
+              <td>
+                <button
+                  class="w3-button w3-tiny spell-toggle"
+                  :class="{ active: entry.enableAccuracyAdvance }"
+                  @click="toggleTargetAccuracyAdvance(entry)"
+                >
+                  {{ entry.enableAccuracyAdvance ? '有效' : '无效' }}
+                </button>
               </td>
               <td>
                 <span :style="{ color: valueToColor(-results[idx]?.roll), fontWeight: 'bold' }">
@@ -2891,6 +2964,74 @@ onUpdated(() => {
 .result-action-button {
   min-width: 4.8em;
   white-space: nowrap;
+}
+
+.attack-resolution-table {
+  min-width: 900px;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.attack-resolution-table :is(th, td) {
+  padding: 5px 3px;
+  overflow-wrap: anywhere;
+  text-align: center;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.attack-resolution-table :is(th, td):nth-child(1) {
+  width: 12%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(2) {
+  width: 5%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(3) {
+  width: 9%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(4) {
+  width: 7%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(5) {
+  width: 11%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(6),
+.attack-resolution-table :is(th, td):nth-child(7),
+.attack-resolution-table :is(th, td):nth-child(8),
+.attack-resolution-table :is(th, td):nth-child(12) {
+  width: 8%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(9),
+.attack-resolution-table :is(th, td):nth-child(11) {
+  width: 9%;
+}
+
+.attack-resolution-table :is(th, td):nth-child(10) {
+  width: 6%;
+}
+
+.attack-resolution-table :deep(.vue-number-input) {
+  width: 5.4em !important;
+  max-width: 100%;
+}
+
+.attack-resolution-table :deep(.vue-number-input__input) {
+  min-width: 0;
+  padding-right: 1.4em;
+  padding-left: 1.4em;
+}
+
+.attack-resolution-table .spell-toggle,
+.attack-resolution-table .result-action-button {
+  min-width: 0;
+  padding-right: 5px;
+  padding-left: 5px;
 }
 
 .env-auto-title {

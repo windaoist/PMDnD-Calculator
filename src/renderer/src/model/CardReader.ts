@@ -103,15 +103,14 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
     if (!isFullCard) {
       col = ['N', 'Q', 'R', 'S', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AD']
     }
-    try {
-      if (stats[`${col[0]}${index}`].v == null) {
-        return null
-      }
-    } catch {
+    const nameCell = stats[`${col[0]}${index}`]
+    const name = String(nameCell?.v ?? '').trim()
+    // 新版自动卡会在空白种族/职业槽中保留公式，公式结果是空字符串。
+    // 这些单元格存在，但不代表实际条目；否则会读出多个空白且已启用的种族。
+    if (!name) {
       return null
     }
 
-    const name = stats[`${col[0]}${index}`].v
     const lv = stats[`${col[1]}${index}`]?.v ?? 0
     const battleScale = stats[`${col[2]}${index}`]?.v ?? 0
     const castScale = stats[`${col[3]}${index}`]?.v ?? 0

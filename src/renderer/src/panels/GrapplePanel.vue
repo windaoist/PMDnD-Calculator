@@ -8,10 +8,8 @@ import { d20, toMod, valueToColor } from '@renderer/utils'
 import { creatureTokenDistance } from '@renderer/model/CreatureDistance'
 
 const targetDefenseOptions = [
-  { key: 'athletics', label: '运动检定', skill: '运动', mode: 'check' },
-  { key: 'acrobatics', label: '体操检定', skill: '体操', mode: 'check' },
-  { key: 'str-save', label: '力量豁免', skill: '力量', mode: 'save' },
-  { key: 'dex-save', label: '敏捷豁免', skill: '敏捷', mode: 'save' }
+  { key: 'str-check', label: '力量检定', skill: '力量' },
+  { key: 'dex-check', label: '敏捷检定', skill: '敏捷' }
 ] as const
 
 type TargetDefenseKey = (typeof targetDefenseOptions)[number]['key']
@@ -31,7 +29,7 @@ const initialTargetCode =
 
 const grapplerCode = ref(initialGrapplerCode)
 const targetCode = ref(initialTargetCode)
-const targetDefense = ref<TargetDefenseKey>('athletics')
+const targetDefense = ref<TargetDefenseKey>('str-check')
 const grapplerAdvantage = ref(0)
 const targetAdvantage = ref(0)
 const dragDistance = ref(6)
@@ -48,12 +46,11 @@ const selectedDefenseOption = computed(
     targetDefenseOptions[0]
 )
 
-const grapplerAthletics = computed(() => (grappler.value ? grappler.value.skillMod('运动') : 0))
+const grapplerStrength = computed(() => (grappler.value ? grappler.value.skillMod('力量') : 0))
 const targetDefenseBonus = computed(() => {
   const defender = target.value
   if (!defender) return 0
-  const option = selectedDefenseOption.value
-  return option.mode == 'save' ? defender.skillSave(option.skill) : defender.skillMod(option.skill)
+  return defender.skillMod(selectedDefenseOption.value.skill)
 })
 const targetIncapacitated = computed(() => target.value?.grandStatus().incapacitated ?? false)
 
@@ -105,7 +102,7 @@ const maxDraggedDistance = computed(() => {
 watch(
   grappler,
   (creature) => {
-    grapplerAdvantage.value = creature?.skillCheckAdvanceWithStatus('运动') ?? 0
+    grapplerAdvantage.value = creature?.skillCheckAdvanceWithStatus('力量') ?? 0
   },
   { immediate: true }
 )
@@ -117,11 +114,7 @@ watch(
       targetAdvantage.value = 0
       return
     }
-    const option = selectedDefenseOption.value
-    targetAdvantage.value =
-      option.mode == 'save'
-        ? creature.skillSaveAdvanceWithStatus(option.skill)
-        : creature.skillCheckAdvanceWithStatus(option.skill)
+    targetAdvantage.value = creature.skillCheckAdvanceWithStatus(selectedDefenseOption.value.skill)
   },
   { immediate: true }
 )
@@ -176,7 +169,7 @@ function rollContest(mode: ContestMode): void {
     return
   }
 
-  const attackerRoll = rollWithAdvantage(grapplerAdvantage.value, grapplerAthletics.value)
+  const attackerRoll = rollWithAdvantage(grapplerAdvantage.value, grapplerStrength.value)
   const defenderRoll = rollWithAdvantage(targetAdvantage.value, targetDefenseBonus.value)
   grapplerRoll.value = attackerRoll
   targetRoll.value = defenderRoll
@@ -276,9 +269,9 @@ function outcomeColor(): string {
       <h4>对抗检定</h4>
       <div class="contest-grid">
         <div>
-          <span>擒抱者运动</span>
-          <strong :style="{ color: valueToColor(-grapplerAthletics) }">
-            {{ toMod(grapplerAthletics) }}
+          <span>擒抱者力量检定</span>
+          <strong :style="{ color: valueToColor(-grapplerStrength) }">
+            {{ toMod(grapplerStrength) }}
           </strong>
           <span>优劣势</span>
           <vue-number-input

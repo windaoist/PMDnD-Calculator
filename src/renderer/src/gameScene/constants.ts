@@ -99,7 +99,8 @@ export const panelSizePresets: Record<string, PanelSizePreset> = {
   BackgroundSettingsPanel: { width: 700, height: 560, minWidth: 260, minHeight: 360 },
   AboutPanel: { width: 420, height: 300, minWidth: 220, minHeight: 220 },
   FieldEditPanel: { width: 520, height: 420, minWidth: 260, minHeight: 280 },
-  SettingsPanel: { width: 440, height: 320, minWidth: 260, minHeight: 260 }
+  SettingsPanel: { width: 440, height: 320, minWidth: 260, minHeight: 260 },
+  ReferencePanel: { width: 1060, height: 720, minWidth: 520, minHeight: 420 }
 }
 
 export const defaultPanelSizePreset: PanelSizePreset = {

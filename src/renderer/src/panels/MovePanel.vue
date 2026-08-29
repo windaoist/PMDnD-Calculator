@@ -34,6 +34,7 @@ import {
   copyAttackMessageToClipboard,
   applyAttackResult,
   damageCalc,
+  lifeStealCalc,
   attackMessage,
   toggleEnableCT,
   toggleEnableMiss,
@@ -232,6 +233,7 @@ function setCurrentMove(): void {
       memory.value.dicerollD = 0
       memory.value.diceroll = memory.value.defender.grandStatus().autoCrit ? 20 : 10
       memory.value.advantageDelta = advantageOverride ?? 0
+      memory.value.lifeStealPercent = 0
       memory.value.rollHistory = [memory.value.diceroll]
     }
     memory.value.customDamage = 0
@@ -705,7 +707,21 @@ onUpdated(() => {
                   >
                 </p>
                 <p class="battlepage-item">
+                  吸血比例
+                  <vue-number-input
+                    v-model="memory.lifeStealPercent"
+                    size="medium"
+                    inline
+                    center
+                    controls
+                    :step="1"
+                    :min="0"
+                  />
+                  %
+                </p>
+                <p class="battlepage-item">
                   <a style="font-size: x-large">伤害：{{ damageCalc() }}</a>
+                  <span v-if="lifeStealCalc() > 0">，吸取：{{ lifeStealCalc() }} HP</span>
                   <button class="w3-button w3-center" @click="copyAttackMessageToClipboard">
                     复制到剪贴板
                   </button>

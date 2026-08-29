@@ -25,6 +25,7 @@ import AboutPanel from '../panels/AboutPanel.vue'
 import FieldEditPanel from '../panels/FieldEditPanel.vue'
 import SettingsPanel from '../panels/SettingsPanel.vue'
 import TacticalMapPanel from '../panels/TacticalMapPanel.vue'
+import ReferencePanel from '../panels/ReferencePanel.vue'
 import DockviewPanelTab from './DockviewPanelTab.vue'
 
 const emit = defineEmits<{ ready: [event: DockviewReadyEvent] }>()
@@ -57,7 +58,8 @@ const dockviewComponents = {
   AboutPanel,
   FieldEditPanel,
   SettingsPanel,
-  TacticalMapPanel
+  TacticalMapPanel,
+  ReferencePanel
 }
 </script>
 

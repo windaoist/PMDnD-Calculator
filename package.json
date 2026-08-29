@@ -1,10 +1,13 @@
 {
   "name": "pmdnd-calculator",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "PMDnD计算器",
   "main": "./out/main/index.js",
   "author": "PMDnD全体贡献者",
   "scripts": {
+    "generate:reference": "npm run generate:status-reference && npm run generate:common-mechanics",
+    "generate:status-reference": "node extend/script/build-status-reference.mjs",
+    "generate:common-mechanics": "node extend/script/build-common-mechanics-reference.mjs",
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",

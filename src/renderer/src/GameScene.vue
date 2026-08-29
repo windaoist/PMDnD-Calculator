@@ -761,6 +761,10 @@ const menuGroups = computed(() => {
       ]
     },
     {
+      label: '查阅',
+      action: 'panel-reference'
+    },
+    {
       label: '存档',
       items: [
         { label: '存档到文件', action: 'save-dialog' },
@@ -1091,6 +1095,8 @@ function handleMenuSelect(action: string): void {
     openPanel('RestPanel', 'panel-rest', '短休与长休', {})
   } else if (action == 'panel-race-stats') {
     openPanel('RaceStatsPanel', 'panel-race-stats', '种族值标准化', {})
+  } else if (action == 'panel-reference') {
+    openPanel('ReferencePanel', 'panel-reference', '查阅', {})
   } else if (action == 'panel-about') {
     openPanel('AboutPanel', 'panel-about', '关于PMDnD计算器', {})
   } else if (action == 'panel-battle') {

@@ -486,6 +486,7 @@ export class BattleMemory {
   diceroll: number
   dicerollD: number
   advantageDelta: number
+  lifeStealPercent: number
   rollHistory: number[]
 
   enableCT: number
@@ -547,6 +548,7 @@ export class BattleMemory {
     this.diceroll = 10
     this.dicerollD = 0
     this.advantageDelta = 0
+    this.lifeStealPercent = 0
     this.rollHistory = [10]
     this.customPowerEnabled = 0
     this.customPower = 50
@@ -1505,7 +1507,7 @@ export function statusCalc(heal: boolean = false): number {
       return damageCalcRaw(
         battleMemoryStatus.value.effect,
         battleLvStatus(),
-        1,
+        2,
         1,
         0,
         damageMdfStatusHeal(),
@@ -1600,6 +1602,7 @@ export function nullMessage(): string {
 
 export function attackMessage(): string {
   if (battleMemory.value.attacker != null && battleMemory.value.defender != null) {
+    const damage = damageCalc()
     const bonus = attackDiceroll() - battleMemory.value.diceroll
     const hist = diceHistoryLines(
       battleMemory.value,
@@ -1616,12 +1619,27 @@ export function attackMessage(): string {
         battleMemory.value.damageType,
         battleMemory.value.damageDef,
         battleMemory.value.damageAspect,
-        damageCalc(),
+        damage,
         normalizedShieldDamageRatio(battleMemory.value)
-      )
+      ) +
+      lifeStealMessage(damage)
     )
   }
   return ''
+}
+
+export function lifeStealCalc(damage: number = damageCalc()): number {
+  const percent = Math.max(0, Number(battleMemory.value.lifeStealPercent) || 0)
+  return Math.max(0, Math.floor((damage * percent) / 100))
+}
+
+function lifeStealMessage(damage: number): string {
+  const attacker = battleMemory.value.attacker
+  const healing = lifeStealCalc(damage)
+  if (!attacker || healing <= 0) return ''
+  const hp = attacker.hpSet()
+  const nextHP = handleHP(hp, attacker.maxHP(), [healing, 0])
+  return `\n${attacker.name()}吸取了 ${healing} HP（HP ${showHP(hp)} -> ${showHP(nextHP)}）。`
 }
 
 export function healMessage(): string {
@@ -1791,11 +1809,14 @@ export function applyAttackResult(): void {
     return
   }
   navigator.clipboard.writeText(attackMessage())
+  const damage = damageCalc()
+  const lifeSteal = lifeStealCalc(damage)
   battleMemory.value.attacker.takePP(-battleMemory.value.costPP)
   battleMemory.value.defender.takeHP(
-    [-damageCalc(), 0],
+    [-damage, 0],
     normalizedShieldDamageRatio(battleMemory.value)
   )
+  battleMemory.value.attacker.takeHP([lifeSteal, 0])
   battleMemory.value.costPP = 0
   moveUseCharge()
 }

@@ -2,7 +2,7 @@
 import { skillCheckList, skillCheckListDisplay, skillToModIndex } from '@renderer/model/DataType'
 import { computed, nextTick, ref } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
-import { SurviveMemory, surviveMemory } from '@renderer/model/GlobalMemory'
+import { SurviveMemory, surviveMemory, toggleSurviveMemory } from '@renderer/model/GlobalMemory'
 import { d10, d20, dvalue, toMod } from '@renderer/utils'
 import Creatures, { Creature } from '@renderer/model/Creature'
 import BattleCharacterSidebar from '@renderer/components/BattleCharacterSidebar.vue'
@@ -26,6 +26,29 @@ const thisCreatures = ref<Creature[]>(Creatures.value)
 const memory = ref<SurviveMemory>(surviveMemory.value)
 const initiativeCodes = ref<string[]>([])
 const initiativeCopyState = ref<'idle' | 'copied' | 'failed'>('idle')
+const concentrationDamage = ref(0)
+const concentrationHasSource = ref(false)
+const concentrationAttackDC = ref(20)
+const concentrationResults = computed(() =>
+  selectedCreatureCodes.value.map((code) => {
+    const creature = creatureByCode(code)!
+    return {
+      code,
+      name: creature.name(),
+      cr: creature.battleLv(),
+      maxHP: creature.maxHP(),
+      dc: creature.concentrationSaveFromDamage(
+        concentrationDamage.value,
+        concentrationHasSource.value ? concentrationAttackDC.value : undefined
+      )
+    }
+  })
+)
+
+function applyConcentrationDC(code: string, dc: number): void {
+  toggleSurviveMemory(code, '专注', 1, dc)
+  memory.value.chooseMode = 1
+}
 
 if (!memory.value.rollMode) {
   memory.value.rollMode = memory.value.isSave ? 'save' : 'check'
@@ -640,6 +663,68 @@ for (const c of thisCreatures.value) {
               </button>
             </div>
           </div>
+          <details
+            v-if="memory.checkSkill == '专注' && memory.rollMode == 'save'"
+            class="concentration-calculator"
+          >
+            <summary>按伤害计算专注豁免 DC</summary>
+            <p class="inline-note">
+              有来源生物：基础 DC = 本次攻击的法术豁免 DC − 10。
+              无特定来源（环境、持续状态伤害）：基础 DC = 3 + 2 × ⌊受击者 CR / 40⌋。 每满受击者最大
+              HP 的 2.5%，额外 +1；未受到伤害时无需专注豁免。
+            </p>
+            <div class="check-controls">
+              <label class="panel-field">
+                <span>伤害来源</span>
+                <select v-model="concentrationHasSource" class="w3-select w3-border">
+                  <option :value="false">无特定来源生物</option>
+                  <option :value="true">有来源生物</option>
+                </select>
+              </label>
+              <label v-if="concentrationHasSource" class="panel-field">
+                <span>本次攻击的法术豁免 DC</span>
+                <vue-number-input
+                  v-model="concentrationAttackDC"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :step="1"
+                />
+              </label>
+              <label class="panel-field">
+                <span>本次受到的伤害</span>
+                <vue-number-input
+                  v-model="concentrationDamage"
+                  size="small"
+                  inline
+                  center
+                  controls
+                  :min="0"
+                  :step="1"
+                />
+              </label>
+            </div>
+            <p v-if="concentrationResults.length == 0" class="inline-note">请选中受击角色。</p>
+            <div
+              v-for="result in concentrationResults"
+              :key="result.code"
+              class="concentration-result"
+            >
+              <span
+                >{{ result.name }}（{{ result.code }}）：CR {{ result.cr }}，最大 HP
+                {{ result.maxHP }}，专注豁免 DC {{ result.dc }}</span
+              >
+              <button
+                class="w3-button w3-border"
+                type="button"
+                :disabled="concentrationDamage <= 0"
+                @click="applyConcentrationDC(result.code, result.dc)"
+              >
+                设置该角色豁免
+              </button>
+            </div>
+          </details>
         </section>
 
         <section class="survive-card action-card">
@@ -684,6 +769,22 @@ for (const c of thisCreatures.value) {
 </template>
 
 <style scoped>
+.concentration-calculator {
+  margin-top: 10px;
+}
+
+.concentration-calculator summary {
+  cursor: pointer;
+}
+
+.concentration-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .survive-panel {
   height: 100%;
   min-height: 0;

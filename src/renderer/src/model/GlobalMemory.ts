@@ -1452,18 +1452,19 @@ function customDamageCalc(memory: BattleMemory, mdf: number): number {
 
 export function damageCalc(): number {
   if (battleMemory.value.attacker != null && battleMemory.value.defender != null) {
-    if (normalizedCustomDamage(battleMemory.value) > 0) {
-      return customDamageCalc(battleMemory.value, damageMdf())
-    }
-    return damageCalcRaw(
-      battleMemory.value.effect,
-      battleLv(),
-      spellAttack(),
-      damageDefense(),
-      spellTypeStab(),
-      damageMdf(),
-      attackDicerollPercentage()
-    )
+    const damage =
+      normalizedCustomDamage(battleMemory.value) > 0
+        ? customDamageCalc(battleMemory.value, damageMdf())
+        : damageCalcRaw(
+            battleMemory.value.effect,
+            battleLv(),
+            spellAttack(),
+            damageDefense(),
+            spellTypeStab(),
+            damageMdf(),
+            attackDicerollPercentage()
+          )
+    return battleMemory.value.defender.attackDamageAfterToughness(damage)
   }
   return 0
 }
@@ -1881,6 +1882,7 @@ export function applyHealShieldStatusResult(): void {
     battleMemory.value.attacker.takePP(-battleMemoryStatus.value.costPP)
   }
   battleMemory.value.defender.takeHP([0, statusCalc(true)], 1, battleMemoryStatus.value.stackShield)
+  battleMemoryStatus.value.costPP = 0
   moveUseCharge()
 }
 

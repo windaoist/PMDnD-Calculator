@@ -1116,11 +1116,12 @@ onUpdated(() => {
                     memory.defender.code(),
                     '专注',
                     1,
-                    memory.defender.concentrationSaveFromDamage(damageCalc())
+                    memory.defender.concentrationSaveFromDamage(damageCalc(), currentDC())
                   )
                 "
               >
-                专注豁免 {{ memory.defender.concentrationSaveFromDamage(damageCalc()) }}
+                专注豁免
+                {{ memory.defender.concentrationSaveFromDamage(damageCalc(), currentDC()) }}
               </button>
               <button
                 v-if="memory.defender != null && memory.attackType == 3"

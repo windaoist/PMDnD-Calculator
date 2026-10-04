@@ -1057,7 +1057,8 @@ textarea {
   border-bottom-color: var(--theme-border) !important;
 }
 
-:root[data-theme='dark'] .w3-striped tbody tr:nth-child(even) {
+:root[data-theme='dark'] .w3-striped tbody tr:nth-child(even),
+:root[data-theme='dark'] .w3-table-all tr:nth-child(even) {
   background-color: var(--theme-bg-muted) !important;
 }
 

@@ -173,6 +173,8 @@ export class SizeAbility {
     this.height = isFinite(this.height) ? this.height : 0
     this.weight = isFinite(this.weight) ? this.weight : 0
     this.size = isFinite(this.size) && this.size >= 0.5 ? this.size : 1
+    // 身高达到 2 米即为大型，兼容角色卡或存档中的旧体型数据。
+    if (this.height >= 2) this.size = Math.max(2, this.size)
     this.reach = isFinite(this.reach) ? this.reach : 0
     this.mov = isFinite(this.mov) ? this.mov : 0
   }

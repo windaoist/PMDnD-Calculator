@@ -12,6 +12,8 @@ import {
   battleMemoryHeal,
   battleMemoryStatus,
   getAttackAdvantage,
+  currentMove,
+  moveMemory,
   onChangeSelectedCreature
 } from '@renderer/model/GlobalMemory'
 import { ref, computed, onUpdated, nextTick } from 'vue'
@@ -92,6 +94,21 @@ const memoryHeal = ref<BattleMemory>(battleMemoryHeal.value)
 const memoryStatus = ref<BattleMemory>(battleMemoryStatus.value)
 
 const damageResult = computed(() => damageCalc())
+const attackDC = computed(() => {
+  const attacker = memory.value.attacker
+  if (!attacker) return undefined
+  const move = currentMove()
+  if (move.name && move.name == memory.value.spellName) {
+    return (
+      attacker.getMoveDC(move.name) +
+      moveMemory.value.dcDelta +
+      envEffectIntensity(move.elemType, attacker)
+    )
+  }
+  return (
+    attacker.effectPower() + spellModifier() + envEffectIntensity(memory.value.spellType, attacker)
+  )
+})
 const healResult = computed(() => healCalc())
 const healShieldResult = computed(() => healShieldCalc())
 const statusDamageResult = computed(() => statusCalc(false))
@@ -685,7 +702,8 @@ onUpdated(() => {
 
           <p class="battlepage-item">
             {{ memory.defender.name() }}的专注豁免难度为
-            {{ memory.defender.concentrationSaveFromDamage(damageResult) }}。
+            {{ memory.defender.concentrationSaveFromDamage(damageResult, attackDC) }}（攻击 DC
+            {{ attackDC }}）。
             <button
               class="w3-button w3-center"
               @click="
@@ -693,7 +711,7 @@ onUpdated(() => {
                   memory.defender.code(),
                   '专注',
                   1,
-                  memory.defender.concentrationSaveFromDamage(damageResult)
+                  memory.defender.concentrationSaveFromDamage(damageResult, attackDC)
                 )
               "
             >

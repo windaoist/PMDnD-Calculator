@@ -1,4 +1,43 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch, type Ref, type WatchStopHandle } from 'vue'
+import type { Creature } from '../model/Creature'
+
+const creatureResourceKeys = [
+  'currentHP',
+  'tempHP',
+  'currentPP',
+  'currentMov',
+  'currentAction',
+  'currentBonusAction',
+  'currentReaction',
+  'tempInitiative'
+] as const satisfies readonly (keyof Creature)[]
+const creatureResourceKeySet = new Set<string>(creatureResourceKeys)
+
+export function watchCreatureHistory(
+  creatures: Ref<Creature[]>,
+  onChange: () => void
+): WatchStopHandle {
+  const stopResources = watch(
+    () => creatures.value.map((creature) => creatureResourceKeys.map((key) => creature[key])),
+    onChange,
+    { flush: 'post' }
+  )
+  const stopDetails = watch(
+    () =>
+      creatures.value.map((creature) =>
+        Object.keys(creature)
+          // 必须先排除再读取，避免 HP 修改也触发复杂数据的深度遍历。
+          .filter((key) => !creatureResourceKeySet.has(key))
+          .map((key) => creature[key as keyof Creature])
+      ),
+    onChange,
+    { deep: true, flush: 'post' }
+  )
+  return () => {
+    stopResources()
+    stopDetails()
+  }
+}
 
 export interface HistorySnapshot {
   label: string

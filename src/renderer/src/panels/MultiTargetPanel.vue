@@ -59,6 +59,8 @@ interface TargetEntry {
   rollHistory: number[]
 }
 
+type TargetRollSettings = Pick<TargetEntry, 'diceroll' | 'ctLimit' | 'rollHistory'>
+
 type PowerInputMode = 'move' | 'customPower' | 'directDamage'
 type OpenPanelFn = (
   component: string,
@@ -72,6 +74,7 @@ const memoryHeal = ref<BattleMemory>(battleMemoryHeal.value)
 const memoryStatus = ref<BattleMemory>(battleMemoryStatus.value)
 const movem = ref<MoveMemory>(moveMemory.value)
 const targets = ref<TargetEntry[]>([])
+let lastTargetRollSettings: TargetRollSettings | null = null
 const selectedTargetCodes = computed<Set<string>>(() => new Set(movem.value.targetCodes))
 const batchAdvantage = ref<number>(0)
 const batchDiceroll = ref<number>(10)
@@ -284,20 +287,13 @@ function syncDamageDefense(mem: BattleMemory): void {
   mem.damageDefense = mem.damageDef == '物理' ? '物防' : '特防'
 }
 
-function resetTargetRolls(defaultAdvantage: number): void {
+function syncTargetBonuses(defaultAdvantage: number): void {
   for (const entry of targets.value) {
-    const creature = getCreature(entry.code)
-    const autoCrit =
-      !movem.value.dmControlRoll &&
-      atkType.value == 1 &&
-      (creature?.grandStatus().autoCrit ?? false)
-    entry.damageMdfD = 0
-    entry.diceroll = autoCrit ? 20 : 10
-    entry.dicerollD = 0
+    // 切换技能后，目标的结算加成仍应与上方保留的公共加成一致。
+    entry.damageMdfD = batchDamageMdfD.value
+    entry.dicerollD = batchDicerollD.value
     entry.advantageDelta = defaultAdvantage
-    entry.ctLimit = memory.value.ctLimit
     entry.enableAccuracyAdvance = memory.value.enableAccuracyAdvance
-    entry.rollHistory = [entry.diceroll]
   }
 }
 
@@ -353,7 +349,7 @@ function setCurrentMove(): void {
     else if (disMatch) advantageOverride = -Number(disMatch[1])
   }
 
-  const defaultAdvantage = advantageOverride ?? 0
+  const defaultAdvantage = advantageOverride ?? batchAdvantage.value
 
   if (!pwr || (isNoPowerPlaceholder(pwr) && !customPowerEnabled())) {
     memory.value.attackType = 0
@@ -381,7 +377,6 @@ function setCurrentMove(): void {
     memory.value.attackType = 3
     memoryStatus.value.costPP = costPPOverride
     memoryStatus.value.battleLvD = 0
-    memoryStatus.value.ctLimit = 20
     memoryStatus.value.spellName = mov.name
     memoryStatus.value.effect = pwr.power
     memoryStatus.value.spellType = elemTypeOverride
@@ -402,15 +397,12 @@ function setCurrentMove(): void {
     if (isNewPower) {
       memoryStatus.value.damageMdfD = 0
       memoryStatus.value.dicerollD = 0
-      memoryStatus.value.diceroll = 10
       memoryStatus.value.advantageDelta = defaultAdvantage
-      memoryStatus.value.rollHistory = [10]
     }
   } else if (damageTypeList.includes(pwr.elemType)) {
     memory.value.attackType = 1
     memory.value.costPP = costPPOverride
     memory.value.battleLvD = 0
-    memory.value.ctLimit = 20
     memory.value.spellName = mov.name
     memory.value.effect = pwr.power
     memory.value.spellType = elemTypeOverride
@@ -431,16 +423,13 @@ function setCurrentMove(): void {
     if (isNewPower) {
       memory.value.damageMdfD = 0
       memory.value.dicerollD = 0
-      memory.value.diceroll = 10
       memory.value.advantageDelta = defaultAdvantage
       memory.value.lifeStealPercent = 0
-      memory.value.rollHistory = [10]
     }
   } else {
     memory.value.attackType = 2
     memoryHeal.value.costPP = costPPOverride
     memoryHeal.value.battleLvD = 100 - caster.battleLv()
-    memoryHeal.value.ctLimit = 20
     memoryHeal.value.spellName = mov.name
     memoryHeal.value.effect = pwr.power
     memoryHeal.value.spellType = elemTypeOverride
@@ -469,9 +458,7 @@ function setCurrentMove(): void {
     if (isNewPower) {
       memoryHeal.value.damageMdfD = 0
       memoryHeal.value.dicerollD = 0
-      memoryHeal.value.diceroll = 10
       memoryHeal.value.advantageDelta = defaultAdvantage
-      memoryHeal.value.rollHistory = [10]
     }
   }
 
@@ -492,7 +479,10 @@ function setCurrentMove(): void {
     }
   }
 
-  if (isNewPower) resetTargetRolls(defaultAdvantage)
+  if (isNewPower) {
+    batchAdvantage.value = defaultAdvantage
+    syncTargetBonuses(defaultAdvantage)
+  }
   movem.value.lastMoveName = powerKey
   ensureTargetData()
 }
@@ -644,7 +634,12 @@ function targetDamageEnvHint(entry: TargetEntry): string {
 function openConcentrationSave(entry: TargetEntry, damage: number): void {
   const defender = getCreature(entry.code)
   if (!defender || !defender.concentrating || damage <= 0) return
-  toggleSurviveMemory(defender.code(), '专注', 1, defender.concentrationSaveFromDamage(damage))
+  toggleSurviveMemory(
+    defender.code(),
+    '专注',
+    1,
+    defender.concentrationSaveFromDamage(damage, currentDC())
+  )
   surviveMemory.value.chooseMode = 1
   openPanel?.('SurvivePanel', 'panel-survive', '检定与豁免', {})
 }
@@ -695,6 +690,15 @@ function ensureTargetData(): void {
   const defenderCodes = new Set(
     movem.value.targetCodes.filter((code) => code != 'DM' && creaturesByCode.has(code))
   )
+  const removedTargets = targets.value.filter((target) => !defenderCodes.has(target.code))
+  const previousTarget = removedTargets[0] ?? targets.value[0]
+  if (previousTarget) {
+    lastTargetRollSettings = {
+      diceroll: previousTarget.diceroll,
+      ctLimit: previousTarget.ctLimit,
+      rollHistory: [...previousTarget.rollHistory]
+    }
+  }
   for (const code of defenderCodes) {
     const creature = creaturesByCode.get(code)
     const autoCrit =
@@ -702,27 +706,19 @@ function ensureTargetData(): void {
       atkType.value == 1 &&
       (creature?.grandStatus().autoCrit ?? false)
     const existing = targets.value.find((t) => t.code == code)
-    if (existing) {
-      if (autoCrit) {
-        existing.diceroll = 20
-        existing.rollHistory = [20]
-      }
-    } else {
-      const defaultAdv =
-        atkType.value == 2
-          ? memoryHeal.value.advantageDelta
-          : atkType.value == 3
-            ? memoryStatus.value.advantageDelta
-            : memory.value.advantageDelta
+    if (!existing) {
+      // 更换目标沿用已有结算设置；取消全部目标后也保留最后一组设置。
+      const inherited = removedTargets.shift() ?? lastTargetRollSettings
+      const diceroll = inherited?.diceroll ?? (autoCrit ? 20 : memory.value.diceroll)
       targets.value.push({
         code,
-        damageMdfD: 0,
-        diceroll: autoCrit ? 20 : 10,
-        dicerollD: 0,
-        advantageDelta: defaultAdv,
-        ctLimit: memory.value.ctLimit,
+        damageMdfD: batchDamageMdfD.value,
+        diceroll,
+        dicerollD: batchDicerollD.value,
+        advantageDelta: batchAdvantage.value,
+        ctLimit: inherited?.ctLimit ?? memory.value.ctLimit,
         enableAccuracyAdvance: memory.value.enableAccuracyAdvance,
-        rollHistory: autoCrit ? [20] : [10]
+        rollHistory: inherited ? [...inherited.rollHistory] : [diceroll]
       })
     }
   }
@@ -797,6 +793,9 @@ function normalizedCritLimit(value: number): number {
 function setBatchCritLimit(value: number): void {
   const limit = normalizedCritLimit(value)
   memory.value.ctLimit = limit
+  memoryHeal.value.ctLimit = limit
+  memoryStatus.value.ctLimit = limit
+  if (lastTargetRollSettings) lastTargetRollSettings.ctLimit = limit
   for (const entry of targets.value) entry.ctLimit = limit
 }
 
@@ -942,7 +941,7 @@ function computeResult(entry: TargetEntry): TargetResult {
     code: entry.code,
     name: defender.name(),
     defValue,
-    damage:
+    damage: defender.attackDamageAfterToughness(
       normalizedCustomDamage(mem) > 0
         ? customDamageWithMdf(mem, mdf)
         : damageCalcRaw(
@@ -953,7 +952,8 @@ function computeResult(entry: TargetEntry): TargetResult {
             spellTypeStab(),
             mdf,
             rollPct
-          ),
+          )
+    ),
     mdf,
     roll,
     rollPct
@@ -1251,6 +1251,16 @@ function applyCasterCost(): void {
           ? movem.value.nullCostPP
           : memory.value.costPP
   if (cost > 0) atk.currentPP = Math.max(0, atk.currentPP - cost)
+  // 本次施法只扣一次 PP，后续多打结算沿用零消耗。
+  if (atkType.value == 3) {
+    memoryStatus.value.costPP = 0
+  } else if (atkType.value == 2) {
+    memoryHeal.value.costPP = 0
+  } else if (atkType.value == 0) {
+    movem.value.nullCostPP = 0
+  } else {
+    memory.value.costPP = 0
+  }
   moveUseCharge()
 }
 
@@ -1913,7 +1923,7 @@ onUpdated(() => {
               <label class="spell-inline-field spell-number-field">
                 <span>暴击阈值</span>
                 <vue-number-input
-                  v-model="memoryHeal.ctLimit"
+                  :model-value="memoryHeal.ctLimit"
                   size="small"
                   inline
                   center
@@ -1921,6 +1931,7 @@ onUpdated(() => {
                   :step="1"
                   :min="1"
                   :max="20"
+                  @update:model-value="setBatchCritLimit"
                 />
               </label>
               <button
@@ -1943,7 +1954,7 @@ onUpdated(() => {
               <label class="spell-inline-field spell-number-field">
                 <span>暴击阈值</span>
                 <vue-number-input
-                  v-model="memoryStatus.ctLimit"
+                  :model-value="memoryStatus.ctLimit"
                   size="small"
                   inline
                   center
@@ -1951,6 +1962,7 @@ onUpdated(() => {
                   :step="1"
                   :min="1"
                   :max="20"
+                  @update:model-value="setBatchCritLimit"
                 />
               </label>
               <button
@@ -2138,14 +2150,17 @@ onUpdated(() => {
                   "
                   :title="
                     getCreature(entry.code)?.concentrating
-                      ? `设置 DC ${getCreature(entry.code)?.concentrationSaveFromDamage(results[idx]?.damage ?? 0)} 的专注豁免`
+                      ? `设置 DC ${getCreature(entry.code)?.concentrationSaveFromDamage(results[idx]?.damage ?? 0, currentDC())} 的专注豁免`
                       : '该目标未标记为专注状态'
                   "
                   @click="openConcentrationSave(entry, results[idx]?.damage ?? 0)"
                 >
                   DC
                   {{
-                    getCreature(entry.code)?.concentrationSaveFromDamage(results[idx]?.damage ?? 0)
+                    getCreature(entry.code)?.concentrationSaveFromDamage(
+                      results[idx]?.damage ?? 0,
+                      currentDC()
+                    )
                   }}
                 </button>
               </td>

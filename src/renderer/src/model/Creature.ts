@@ -921,11 +921,18 @@ export class Creature {
     )
   }
 
-  concentrationSaveFromDamage(dmg: number): number {
+  attackDamageAfterToughness(damage: number): number {
+    // 普通攻击在全部伤害修正后、扣除护盾和 HP 前判断；状态伤害不调用此方法。
+    return damage <= this.status.stackOfStatus('刚毅') ? 0 : damage
+  }
+
+  concentrationSaveFromDamage(dmg: number, attackDC?: number): number {
     if (dmg <= 0) {
       return 0
     }
-    return 10 + Math.floor(Math.max(0, (25 * dmg) / this.attribute(0), dmg / 20))
+    const baseDC = attackDC == null ? 3 + 2 * Math.floor(this.battleLv() / 40) : attackDC - 10
+    // 每满最大 HP 的 2.5% 增加 1；先乘 40，避免 0.025 的浮点误差。
+    return baseDC + Math.floor((40 * dmg) / Math.max(1, this.maxHP()))
   }
 
   attributeChangeFade(): void {

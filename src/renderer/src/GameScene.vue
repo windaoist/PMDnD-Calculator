@@ -82,7 +82,7 @@ import {
 import { coneTrianglePoints } from './model/DrawingGeometry'
 import { drawFallbackToken, isUsableTokenImage } from './gameScene/tokenRendering'
 import { useSceneDockview } from './gameScene/useSceneDockview'
-import { HistoryManager } from './gameScene/history'
+import { HistoryManager, watchCreatureHistory } from './gameScene/history'
 import { appSettings, normalizeRenderScale, setWorkspaceMode } from './appSettings'
 import { roundedCreatureTokenDistance } from './model/CreatureDistance'
 import {
@@ -2567,6 +2567,9 @@ function canvasPointerMove(e: PointerEvent): void {
 }
 
 function canvasPointerUp(e: PointerEvent): void {
+  const lastPointer = activeCanvasPointers.get(e.pointerId)
+  // 离开画布或其他指针的结束事件不能重复提交当前拖动。
+  if (!lastPointer) return
   if (canvasLongPressPointerId == e.pointerId) clearCanvasLongPress()
   activeCanvasPointers.delete(e.pointerId)
   if (canvasRef.value?.hasPointerCapture(e.pointerId)) {
@@ -2581,6 +2584,11 @@ function canvasPointerUp(e: PointerEvent): void {
   if (canvasLongPressHandled) {
     canvasLongPressHandled = false
     return
+  }
+  // 快速拖动时最后一个 pointermove 可能尚未抵达松手位置。
+  // 仅在坐标变化时更新，避免原地点击把 Token 吸附到点击点。
+  if (lastPointer.clientX != e.clientX || lastPointer.clientY != e.clientY) {
+    canvasMouseMove(e)
   }
   canvasMouseUp()
 }
@@ -2614,7 +2622,14 @@ function canvasPointerCancel(e: PointerEvent): void {
 }
 
 function canvasPointerLeave(e: PointerEvent): void {
-  if (e.pointerType == 'mouse') canvasPointerUp(e)
+  // 指针捕获期间，即使移出画布，也应等待实际松手后再提交。
+  if (
+    e.pointerType == 'mouse' &&
+    e.buttons == 0 &&
+    !canvasRef.value?.hasPointerCapture(e.pointerId)
+  ) {
+    canvasPointerUp(e)
+  }
 }
 
 function canvasMouseDown(e: MouseEvent): void {
@@ -3259,20 +3274,20 @@ onMounted(() => {
       draw()
     }
   )
+  watchCreatureHistory(Creatures, () => scheduleHistoryCapture())
   watch(
     () => [
-      Creatures.value,
       envMemory.value,
       historyTrackedMapState(),
-      statusMemory.value,
+      statusMemorySaveData(),
       mainMemory.value,
       toolsMemory.value,
       fieldEditMemory.value,
       surviveMemory.value,
-      characterMemory.value,
-      battleMemory.value,
-      battleMemoryHeal.value,
-      battleMemoryStatus.value,
+      characterMemorySaveData(),
+      battleMemorySaveData(battleMemory.value),
+      battleMemorySaveData(battleMemoryHeal.value),
+      battleMemorySaveData(battleMemoryStatus.value),
       moveMemory.value
     ],
     () => scheduleHistoryCapture(),
@@ -3396,6 +3411,14 @@ function battleMemorySaveData(memory: BattleMemory): Record<string, unknown> {
 
 function characterMemorySaveData(): Record<string, unknown> {
   const { cur, ...values } = characterMemory.value
+  return {
+    ...values,
+    curCode: cur?.code() ?? ''
+  }
+}
+
+function statusMemorySaveData(): Record<string, unknown> {
+  const { cur, ...values } = statusMemory.value
   return {
     ...values,
     curCode: cur?.code() ?? ''

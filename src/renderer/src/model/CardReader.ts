@@ -141,12 +141,11 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
   }
 
   try {
+    // 职业槽允许留空，仍需扫描整个职业区域。
     for (let i = 11; i <= (isFullCard ? 31 : 16); i++) {
       const race = fetchRace(i, '职业')
       if (race != null) {
         races.push(race)
-      } else {
-        break
       }
     }
   } catch {
